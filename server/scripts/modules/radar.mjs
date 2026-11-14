@@ -528,4 +528,4 @@ class Radar extends WeatherDisplay {
 	}
 }
 
-registerDisplay(new Radar(10, 'radar'));
+registerDisplay(new Radar(9, 'radar'));

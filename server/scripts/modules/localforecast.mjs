@@ -17,27 +17,44 @@ class LocalForecast extends WeatherDisplay {
 	async getData(_weatherParameters) {
 		if (!super.getData(_weatherParameters)) return;
 
-		// get today + 2 more days hourly forecasts
-		const days = Object.keys(_weatherParameters.forecast).slice(0, 3);
-		const daysWeatherData = Object.values(_weatherParameters.forecast).slice(0, 3);
+		let conditions = [];
+		const bomDays = _weatherParameters.bom?.daily?.days;
+		if (bomDays?.length) {
+			// BOM's own forecast text (when the BOM data setting is on)
+			conditions = bomDays.slice(0, 4).filter((day) => day.extended_text).map((day, index) => {
+				const date = new Date(day.date);
+				// BOM dates are midnight local time expressed in UTC
+				const dayName = index === 0 ? 'Today' : new Date(date.getTime() + 12 * 3600 * 1000)
+					.toLocaleDateString('en-AU', { weekday: 'long', timeZone: _weatherParameters.timeZone });
+				const temps = [];
+				if (day.temp_min !== null && day.temp_min !== undefined) temps.push(`Min ${day.temp_min}.`);
+				if (day.temp_max !== null && day.temp_max !== undefined) temps.push(`Max ${day.temp_max}.`);
+				const rain = day.rain?.chance !== undefined ? ` Chance of rain ${day.rain.chance}%.` : '';
+				return { DayName: `${dayName}...`, Text: `${day.extended_text} ${temps.join(' ')}${rain}` };
+			});
+		}
 
-		const localForecastTextByDay = [];
+		if (conditions.length === 0) {
+			// get today + 2 more days hourly forecasts
+			const days = Object.keys(_weatherParameters.forecast).slice(0, 3);
+			const daysWeatherData = Object.values(_weatherParameters.forecast).slice(0, 3);
 
-		daysWeatherData.forEach((day, index) => {
-			const result = generateLocalForecast(days[index], day.hours);
-			localForecastTextByDay.push(JSON.parse(result));
-		});
+			const localForecastTextByDay = [];
 
-		const conditions = [];
+			daysWeatherData.forEach((day, index) => {
+				const result = generateLocalForecast(days[index], day.hours);
+				localForecastTextByDay.push(JSON.parse(result));
+			});
 
-		localForecastTextByDay.forEach((forecast) => {
-			const page = Object.values(forecast.periods).map((forecastText) => ({
-				DayName: forecast.date,
-				Text: forecastText.text,
-			}));
+			localForecastTextByDay.forEach((forecast) => {
+				const page = Object.values(forecast.periods).map((forecastText) => ({
+					DayName: forecast.date,
+					Text: forecastText.text,
+				}));
 
-			conditions.push(...page);
-		});
+				conditions.push(...page);
+			});
+		}
 
 		// read each text
 		this.screenTexts = conditions.map((condition) => {
@@ -78,4 +95,4 @@ class LocalForecast extends WeatherDisplay {
 }
 
 // register display
-registerDisplay(new LocalForecast(7, 'local-forecast'));
+registerDisplay(new LocalForecast(6, 'local-forecast'));

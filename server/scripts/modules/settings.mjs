@@ -15,8 +15,7 @@ const settings = {
 	pressureUnits: { value: 1 },
 	hoursFormat: { value: 2 },
 	speed: { value: 1.0 },
-	experimentalFeatures: { value: false },
-	hideWebamp: { value: false },
+	bomData: { value: false },
 	kiosk: { value: false },
 	scanLines: { value: false },
 };
@@ -34,7 +33,7 @@ const init = () => {
 		[1, 'knots'],
 		[2, 'm/s'],
 	]);
-	settings.marineWaveHeightUnits = new Setting('marineWaveHeightUnits', 'Wave Height Units', 'select', 1, marineWaveHeightUnitsChange, true, [
+	settings.marineWaveHeightUnits = new Setting('marineWaveHeightUnits', 'Wave Height Units', 'select', 2, marineWaveHeightUnitsChange, true, [
 		[1, 'feet'],
 		[2, 'meters'],
 	]);
@@ -48,14 +47,13 @@ const init = () => {
 		[2, 'mi'],
 		[3, 'ft'],
 		[4, 'meters'],
-		[5, 'bananas'],
 	]);
 	settings.pressureUnits = new Setting('pressureUnits', 'Pressure Units', 'select', 1, pressureChangeUnits, true, [
 		[1, 'hPa'],
 		[2, 'inHG'],
 		[3, 'mmHG'],
 	]);
-	settings.hoursFormat = new Setting('hoursFormat', 'Hours Format', 'select', 2, hoursChangeFormat, true, [
+	settings.hoursFormat = new Setting('hoursFormat', 'Hours Format', 'select', 1, hoursChangeFormat, true, [
 		[1, '12-hour'],
 		[2, '24-hour'],
 	]);
@@ -67,15 +65,14 @@ const init = () => {
 		[1.25, 'Slow'],
 		[1.5, 'Very Slow'],
 	]);
-	settings.experimentalFeatures = new Setting(
-		'experimentalFeatures',
-		'Experimental Features <a href="https://github.com/mwood77/ws4kp-international?tab=readme-ov-file#updates-in-1100" target="_blank" rel="noopener noreferrer">(info)</a>',
+	settings.bomData = new Setting(
+		'bomData',
+		'BOM data (personal use only) <a href="credits.html#bom" target="_blank" rel="noopener noreferrer">(info)</a>',
 		'checkbox',
 		false,
-		experimentalFeaturesChange,
+		bomDataChange,
 		true,
 	);
-	settings.hideWebamp = new Setting('hideWebamp', 'Hide Webamp (Winamp)', 'checkbox', false, hideWebampChange, true);
 	settings.scanLines = new Setting('scanLines', 'Enable Scan Lines', 'checkbox', false, scanLinesChange, true);
 
 	settings.wide = new Setting('wide', 'Widescreen', 'checkbox', false, wideScreenChange, true);
@@ -132,37 +129,11 @@ const hoursChangeFormat = (value) => {
 	}
 };
 
-const experimentalFeaturesChange = (value) => {
-	document.documentElement.setAttribute('experimental-features', value);
-
-	// @todo - this is a bit gnarly
-	if (!value) localStorage.removeItem('nearbyCitiesFromLocality');
-	btnNavigateRefreshClick();
-};
-
-const hideWebampChange = async (value) => {
-	if (value) {
-		document.documentElement.setAttribute('hide-webamp', value);
-	} else {
-		document.documentElement.removeAttribute('hide-webamp');
-	}
-
-	// Webamp is a global variable, defined in a <script>
-	// tag in index.ejs, so we can access it directly
-
-	// Wait until the global webamp instance is available
-	if (!window.webamp) {
-		console.warn('Webamp not initialized yet.');
-		return;
-	}
-
-	if (value === true) {
-		// eslint-disable-next-line no-undef
-		await webamp.close();
-	} else {
-		// eslint-disable-next-line no-undef
-		await webamp.reopen();
-	}
+const bomDataChange = (value) => {
+	document.documentElement.setAttribute('bom-data', value);
+	// reload the data with the new source (skipped during start-up)
+	if (bomDataChange.initialised) btnNavigateRefreshClick();
+	bomDataChange.initialised = true;
 };
 
 const scanLinesChange = (value) => {

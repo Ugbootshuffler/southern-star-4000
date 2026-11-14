@@ -1,56 +1,77 @@
-// current weather conditions display
-import { distance as calcDistance, directionToNSEW } from './utils/calc.mjs';
-import { json } from './utils/fetch.mjs';
+// latest observations for nearby towns
+// Default: Open-Meteo current conditions for the nearest towns (model estimates).
+// With the "BOM data" setting on: real BOM automatic weather station observations near those towns.
+import { directionToNSEW } from './utils/calc.mjs';
 import STATUS from './status.mjs';
-import { locationCleanup } from './utils/string.mjs';
-import { celsiusToFahrenheit, kphToMph } from './utils/units.mjs';
 import WeatherDisplay from './weatherdisplay.mjs';
 import { registerDisplay } from './navigation.mjs';
+import { getConditionText, getMultiPoint } from './utils/weather.mjs';
+import { isBomEnabled, getObservations } from './utils/bom.mjs';
+import { nearbyTowns } from './utils/au-config.mjs';
+import ConversionHelpers from './utils/conversionHelpers.mjs';
+
+const MAX_ROWS = 7;
 
 class LatestObservations extends WeatherDisplay {
 	constructor(navId, elemId) {
-		super(navId, elemId, 'Latest Observations', false);
-
-		// constants
-		this.MaximumRegionalStations = 7;
+		super(navId, elemId, 'Latest Observations', true);
 		this.showOnProgress = false;
 	}
 
 	async getData(_weatherParameters) {
 		if (!super.getData(_weatherParameters)) return;
 		const weatherParameters = _weatherParameters ?? this.weatherParameters;
+		const { latitude, longitude } = weatherParameters;
 
-		// calculate distance to each station
-		const stationsByDistance = Object.keys(StationInfo).map((key) => {
-			const station = StationInfo[key];
-			const distance = calcDistance(station.lat, station.lon, weatherParameters.latitude, weatherParameters.longitude);
-			return { ...station, distance };
-		});
+		try {
+			const bom = isBomEnabled();
+			// more candidate towns when using BOM because several towns share a station
+			const towns = nearbyTowns(latitude, longitude, { count: bom ? 16 : MAX_ROWS, minSpacingKm: 8, minPopulation: 1500 });
+			const models = await getMultiPoint(towns);
 
-		// sort the stations by distance
-		const sortedStations = stationsByDistance.sort((a, b) => a.distance - b.distance);
-		// try up to 30 regional stations
-		const regionalStations = sortedStations.slice(0, 30);
+			let rows = towns.map((town, i) => {
+				const current = models[i]?.current ?? {};
+				return {
+					name: town.name,
+					distance: town.distance,
+					temp: current.temperature_2m,
+					weather: getConditionText(current.weather_code),
+					windSpeed: current.wind_speed_10m,
+					windDirection: directionToNSEW(current.wind_direction_10m),
+				};
+			});
 
-		// get data for regional stations
-		// get first 7 stations
-		const actualConditions = [];
-		let lastStation = Math.min(regionalStations.length, 7);
-		let firstStation = 0;
-		while (actualConditions.length < 7 && (lastStation) <= regionalStations.length) {
-			// eslint-disable-next-line no-await-in-loop
-			const someStations = await getStations(regionalStations.slice(firstStation, lastStation));
+			if (bom) {
+				const observations = await Promise.all(towns.map((town) => getObservations(town.lat, town.lon)));
+				const seen = new Set();
+				const bomRows = [];
+				observations.forEach((obs, i) => {
+					if (!obs?.station || obs.temp === null || obs.temp === undefined) return;
+					if (seen.has(obs.station.bom_id)) return;
+					seen.add(obs.station.bom_id);
+					bomRows.push({
+						name: obs.station.name,
+						distance: towns[i].distance,
+						temp: obs.temp,
+						weather: rows[i].weather,
+						windSpeed: obs.wind?.speed_kilometre ?? 0,
+						windDirection: obs.wind?.direction === 'CALM' ? '' : (obs.wind?.direction ?? ''),
+					});
+				});
+				if (bomRows.length > 0) {
+					rows = bomRows;
+					this.source = 'BOM';
+				}
+			} else {
+				this.source = 'Open-Meteo';
+			}
 
-			actualConditions.push(...someStations);
-			// update counters
-			firstStation += lastStation;
-			lastStation = Math.min(regionalStations.length + 1, firstStation + 7 - actualConditions.length);
+			this.data = rows.filter((r) => r.temp !== undefined && r.temp !== null).slice(0, MAX_ROWS);
+		} catch (error) {
+			console.error('Latest observations failed', error);
+			this.data = [];
 		}
 
-		// cut down to the maximum of 7
-		this.data = actualConditions.slice(0, this.MaximumRegionalStations);
-
-		// test for at least one station
 		if (this.data.length === 0) {
 			this.setStatus(STATUS.noData);
 			return;
@@ -60,34 +81,34 @@ class LatestObservations extends WeatherDisplay {
 
 	async drawCanvas() {
 		super.drawCanvas();
-		const conditions = this.data;
 
-		// sort array by station name
-		const sortedConditions = conditions.sort((a, b) => ((a.Name < b.Name) ? -1 : 1));
+		// model estimates are labelled "Nearby Conditions", real BOM station data "Latest Observations"
+		const top = this.elem.querySelector('.header .title.dual .top');
+		const bottom = this.elem.querySelector('.header .title.dual .bottom');
+		if (top && bottom) {
+			top.innerHTML = this.source === 'BOM' ? 'Latest' : 'Nearby';
+			bottom.innerHTML = this.source === 'BOM' ? 'Observations' : 'Conditions';
+		}
 
-		this.elem.querySelector('.column-headers .temp.english').classList.add('show');
-		this.elem.querySelector('.column-headers .temp.metric').classList.remove('show');
+		this.elem.querySelector('.column-headers .temp.metric')?.classList.add('show');
+		const unit = ConversionHelpers.getTemperatureUnitText();
+		const tempHeader = this.elem.querySelector('.column-headers .temp.metric');
+		if (tempHeader) tempHeader.innerHTML = `&deg;${unit}`;
 
-		const lines = sortedConditions.map((condition) => {
-			const windDirection = directionToNSEW(condition.windDirection.value);
-
-			const	Temperature = Math.round(celsiusToFahrenheit(condition.temperature.value));
-			const WindSpeed = Math.round(kphToMph(condition.windSpeed.value));
-
+		const lines = this.data.map((condition) => {
+			const temp = Math.round(ConversionHelpers.convertTemperatureUnits(condition.temp));
+			const windSpeed = Math.round(ConversionHelpers.convertWindUnits(condition.windSpeed));
 			const fill = {
-				location: locationCleanup(condition.city).substr(0, 14),
-				temp: Temperature,
-				weather: shortenCurrentConditions(condition.textDescription).substr(0, 9),
+				location: shortenName(condition.name).substr(0, 13),
+				temp,
+				weather: shortenCurrentConditions(condition.weather).substr(0, 9),
 			};
-
-			if (WindSpeed > 0) {
-				fill.wind = windDirection + (Array(6 - windDirection.length - WindSpeed.toString().length).join(' ')) + WindSpeed.toString();
-			} else if (WindSpeed === 'NA') {
-				fill.wind = 'NA';
+			if (windSpeed > 0) {
+				const dir = condition.windDirection ?? '';
+				fill.wind = dir + ' '.repeat(Math.max(0, 5 - dir.length - windSpeed.toString().length)) + windSpeed.toString();
 			} else {
 				fill.wind = 'Calm';
 			}
-
 			return this.fillTemplate('observation-row', fill);
 		});
 
@@ -98,46 +119,30 @@ class LatestObservations extends WeatherDisplay {
 		this.finishDraw();
 	}
 }
-const shortenCurrentConditions = (_condition) => {
+
+const shortenName = (name) => name
+	.replace(/ - /g, ' ')
+	.replace(/^(Point|Port) /, 'Pt ')
+	.replace('Observatory Hill', 'Obs Hill')
+	.replace(' Airport', ' AP')
+	.replace(' Harbour', ' Hbr')
+	.replace('Mount ', 'Mt ');
+
+const shortenCurrentConditions = (_condition = '') => {
 	let condition = _condition;
-	condition = condition.replace(/Light/, 'L');
+	condition = condition.replace(/Slight /, 'L ');
+	condition = condition.replace(/Light /, 'L ');
+	condition = condition.replace(/Moderate /, '');
 	condition = condition.replace(/Heavy/, 'H');
-	condition = condition.replace(/Partly/, 'P');
-	condition = condition.replace(/Mostly/, 'M');
-	condition = condition.replace(/Few/, 'F');
-	condition = condition.replace(/Thunderstorm/, 'T\'storm');
-	condition = condition.replace(/ in /, '');
-	condition = condition.replace(/Vicinity/, '');
-	condition = condition.replace(/ and /, ' ');
-	condition = condition.replace(/Freezing Rain/, 'Frz Rn');
-	condition = condition.replace(/Freezing/, 'Frz');
-	condition = condition.replace(/Unknown Precip/, '');
-	condition = condition.replace(/L Snow Fog/, 'L Snw/Fog');
-	condition = condition.replace(/ with /, '/');
+	condition = condition.replace(/Violent /, 'H ');
+	condition = condition.replace(/Partly cloudy/, 'P Cloudy');
+	condition = condition.replace(/Mainly clear/, 'M Clear');
+	condition = condition.replace(/Clear sky/, 'Clear');
+	condition = condition.replace(/Rain showers/, 'Showers');
+	condition = condition.replace(/Thunderstorm.*/, 'T\'storm');
+	condition = condition.replace(/Drizzle/, 'Drzl');
 	return condition;
 };
 
-const getStations = async (stations) => {
-	const stationData = await Promise.all(stations.map(async (station) => {
-		try {
-			const data = await json(`https://api.weather.gov/stations/${station.id}/observations/latest`, { retryCount: 1, stillWaiting: () => this.stillWaiting() });
-			// test for temperature, weather and wind values present
-			if (data.properties.temperature.value === null
-			|| data.properties.textDescription === ''
-			|| data.properties.windSpeed.value === null) return false;
-			// format the return values
-			return {
-				...data.properties,
-				StationId: station.id,
-				city: station.city,
-			};
-		} catch (error) {
-			console.log(`Unable to get latest observations for ${station.id}`);
-			return false;
-		}
-	}));
-	// filter false (no data or other error)
-	return stationData.filter((d) => d);
-};
 // register display
 registerDisplay(new LatestObservations(2, 'latest-observations'));

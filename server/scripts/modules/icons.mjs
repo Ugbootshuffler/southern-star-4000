@@ -34,7 +34,7 @@ const getWaveIconFromCondition = (condition) => {
 			return addPath('rough.svg');
 		default:
 			console.log(`Unable to locate wave icon for: ${condition}`);
-			return addPath('Logo3.gif');
+			return addPath('smooth.svg');
 	}
 };
 
@@ -181,7 +181,7 @@ const getWeatherRegionalIconFromIconLink = (text, isDay) => {
 
 		default:
 			console.log(`Unable to locate icon for: ${text}`);
-			return addPath('Logo3.gif');
+			return addPath('Partly-Cloudy.gif');
 	}
 };
 
@@ -319,7 +319,7 @@ const getWeatherIconFromIconLink = (text, timeZone, extendedForecast) => {
 
 		default:
 			console.log(`Unable to locate icon for: ${text}`);
-			return addPath('Logo3.gif');
+			return addPath('Partly-Cloudy.gif');
 	}
 };
 

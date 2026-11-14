@@ -1,29 +1,24 @@
 {
-	"name": "ws4kp-international",
-	"version": "12.1.1",
-	"description": "Welcome to the WeatherStar 4000+ project page!",
+	"name": "southern-star-4000",
+	"version": "1.0.0",
+	"description": "Retro 1990s-style local weather display for Australia, adapted from WeatherStar 4000+ (MIT).",
 	"main": "index.js",
 	"scripts": {
 		"test": "echo \"Error: no test specified\" && exit 1",
 		"build:css": "sass --style=compressed ./server/styles/scss/main.scss ./server/styles/main.css",
 		"lint": "eslint ./server/scripts/**/*.mjs",
 		"lint:fix": "eslint --fix ./server/scripts/**/*.mjs",
-		"start": "nodemon index.js",
-		"copy-assets": "mkdir -p docs/images && cp -r ./server/images docs && mkdir -p docs/fonts && cp -r ./server/fonts docs",
+		"start": "node index.js",
+		"copy-assets": "mkdir -p docs && cp -r ./server/images ./server/fonts ./server/music docs/ && cp views/credits.html LICENSE docs/ && cp server/favicon.ico server/images/apple-touch-icon.png docs/ 2>/dev/null; touch docs/.nojekyll",
 		"build": "rm -rf docs/ && gulp && npm run copy-assets",
-		"copy-assets:win": "cmd /c \"mkdir docs\\images && xcopy /e /i /y server\\images docs\\images && mkdir docs\\fonts && xcopy /e /i /y server\\fonts docs\\fonts\"",
-		"build:win": "cmd /c \"rmdir /s /q docs && gulp && npm run copy-assets:win\""
+		"dev": "nodemon index.js"
 	},
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/mwood77/ws4kp-international.git"
+		"url": ""
 	},
-	"author": "Matt Walsh",
+	"author": "Matt Walsh (WeatherStar 4000+), Michael Wood (international fork), Australian adaptation contributors",
 	"license": "MIT",
-	"bugs": {
-		"url": "https://github.com/mwood77/ws4kp-international/issues"
-	},
-	"homepage": "https://github.com/mwood77/ws4kp-international#readme",
 	"devDependencies": {
 		"@aws-sdk/client-cloudfront": "^3.609.0",
 		"del": "^7.1.0",

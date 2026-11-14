@@ -1,6 +1,6 @@
 import { json } from './fetch.mjs';
 
-const openMeteoAdditionalForecastParameters = '&daily=temperature_2m_max,uv_index_max,temperature_2m_min&hourly=temperature_2m,relative_humidity_2m,dew_point_2m,apparent_temperature,precipitation_probability,precipitation,rain,showers,snowfall,snow_depth,weather_code,pressure_msl,surface_pressure,cloud_cover,visibility,evapotranspiration,et0_fao_evapotranspiration,vapour_pressure_deficit,uv_index,uv_index_clear_sky,is_day,sunshine_duration,wet_bulb_temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m&models=best_match&timezone=auto';
+const openMeteoAdditionalForecastParameters = '&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m,dew_point_2m,visibility,uv_index&daily=temperature_2m_max,uv_index_max,temperature_2m_min,weather_code,sunrise,sunset,precipitation_probability_max,precipitation_sum&forecast_days=8&hourly=temperature_2m,relative_humidity_2m,dew_point_2m,apparent_temperature,precipitation_probability,precipitation,rain,showers,snowfall,snow_depth,weather_code,pressure_msl,surface_pressure,cloud_cover,visibility,evapotranspiration,et0_fao_evapotranspiration,vapour_pressure_deficit,uv_index,uv_index_clear_sky,is_day,sunshine_duration,wet_bulb_temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m&models=best_match&timezone=auto';
 const openMeteoAdditionalForecastParametersMarine = '&hourly=wave_height,wind_wave_direction,swell_wave_height,swell_wave_height,swell_wave_direction,swell_wave_period&timezone=auto&forecast_days=1';
 
 const getPoint = async (lat, lon) => {
@@ -84,7 +84,7 @@ const getMarinePoint = async (lat, lon) => {
 const getGeocoding = async (name) => {
 	try {
 		const numResults = 100;
-		return await json(`https://geocoding-api.open-meteo.com/v1/search?name=${name}&count=${numResults}&language=en&format=json`);
+		return await json(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=${numResults}&language=en&format=json&countryCode=AU`);
 	} catch (error) {
 		console.log(`Unable to get locality with value ${name}`);
 		console.error(error);
@@ -108,17 +108,24 @@ const weatherConditions = [
 	{ codes: [96, 99], text: ['Thunderstorm with slight hail', 'Thunderstorm with heavy hail'] },
 ];
 
-const getConditionText = (code) => {
-	const conditionIndex = weatherConditions.findIndex((condition) => condition.codes.includes(code));
-	const weatherConditionObject = weatherConditions[conditionIndex];
+const getConditionText = (_code) => {
+	const code = parseInt(_code, 10);
+	const weatherConditionObject = weatherConditions.find((condition) => condition.codes.includes(code));
+	if (!weatherConditionObject) {
+		console.log('unable to determine weather condition from code: ', _code);
+		return 'Partly cloudy';
+	}
+	return weatherConditionObject.text[weatherConditionObject.codes.indexOf(code)];
+};
 
-	const weatherTextIndex = weatherConditionObject.codes.findIndex((conditionCode) => conditionCode === code);
-	const weatherText = weatherConditionObject.text[weatherTextIndex];
-
-	if (conditionIndex !== -1) return weatherText;
-
-	console.log('unable to determine weather condition from code: ', code);
-	return `unknown weather condition with code: ${code}`;
+// current conditions and today/tomorrow for several locations in one request
+// locations: [{lat, lon}, ...]  returns an array in the same order
+const getMultiPoint = async (locations) => {
+	if (locations.length === 0) return [];
+	const lats = locations.map((l) => l.lat).join(',');
+	const lons = locations.map((l) => l.lon).join(',');
+	const result = await json(`https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&current=temperature_2m,relative_humidity_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m,pressure_msl&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=3&timezone=auto`);
+	return Array.isArray(result) ? result : [result];
 };
 
 /**
@@ -231,16 +238,20 @@ const aggregateWeatherForecastData = (getPointResponse) => {
 		if (!dailyData[date]) {
 			dailyData[date] = { hours: [] };
 		}
+		if (!dailyAverages[date]) return;
 		dailyAverages[date].temperature_2m_max = daily.temperature_2m_max[index];
 		dailyAverages[date].temperature_2m_min = daily.temperature_2m_min[index];
 	});
 
-	// Add UV index max from the daily section
+	// Add UV index max, the daily weather code, sunrise/sunset and rain from the daily section
 	daily.time.forEach((date, index) => {
-		if (!dailyData[date]) {
-			dailyData[date] = { hours: [] };
-		}
+		if (!dailyAverages[date]) return;
 		dailyAverages[date].uv_index_max = daily.uv_index_max[index];
+		if (daily.weather_code?.[index] !== null && daily.weather_code?.[index] !== undefined) dailyAverages[date].weather_code = String(daily.weather_code[index]);
+		if (daily.sunrise) dailyAverages[date].sunrise = daily.sunrise[index];
+		if (daily.sunset) dailyAverages[date].sunset = daily.sunset[index];
+		if (daily.precipitation_probability_max) dailyAverages[date].precipitation_probability_max = daily.precipitation_probability_max[index];
+		if (daily.precipitation_sum) dailyAverages[date].precipitation_sum = daily.precipitation_sum[index];
 	});
 
 	return dailyAverages;
@@ -254,4 +265,5 @@ export {
 	getGeocoding,
 	aggregateWeatherForecastData,
 	getConditionText,
+	getMultiPoint,
 };

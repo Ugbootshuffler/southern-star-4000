@@ -1,8 +1,8 @@
+// Upstream gated "nearby cities" features behind an experimental flag because they needed a
+// private CORS proxy. This adaptation uses a bundled list of Australian towns instead, so the
+// features are always on.
 export default class ExperimentalFeatures {
 	static getExperimentalFlag() {
-		const experimentalFeatures = document.documentElement.getAttribute('experimental-features');
-
-		if (experimentalFeatures === 'true') return true;
-		return false;
+		return true;
 	}
 }

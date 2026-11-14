@@ -15,9 +15,7 @@ import { readFile } from 'fs/promises';
 const clean = () => deleteAsync(['./docs']);
 
 const jsSourcesData = [
-	'server/scripts/data/travelcities.js',
-	'server/scripts/data/regionalcities.js',
-	'server/scripts/data/stations.js',
+	'server/scripts/data/au-towns.js',
 ];
 
 const jsVendorSources = [
@@ -40,11 +38,9 @@ const mjsSources = [
 	'server/scripts/modules/latestobservations.mjs',
 	'server/scripts/modules/localforecast.mjs',
 	'server/scripts/modules/radar.mjs',
-	'server/scripts/modules/regionalforecast.mjs',
 	'server/scripts/modules/travelforecast.mjs',
 	'server/scripts/modules/marine-forecast.mjs',
 	'server/scripts/modules/aqi-forecast.mjs',
-	'server/scripts/modules/customweatherstation.mjs',
 	'server/scripts/modules/progress.mjs',
 	'server/scripts/index.mjs',
 ];
@@ -92,7 +88,7 @@ const compressHtml = async () => {
 		.pipe(dest('./docs'));
 };
 
-const copyOtherFiles = () => src(['server/robots.txt', 'server/manifest.json'], { base: 'server/' })
+const copyOtherFiles = () => src(['server/robots.txt', 'server/manifest.json', 'server/favicon.ico'], { base: 'server/' })
 	.pipe(dest('./docs'));
 
 const build = series(clean, parallel(buildJs, copyCss, compressHtml, copyOtherFiles, compressJsData, compressJsVendor));

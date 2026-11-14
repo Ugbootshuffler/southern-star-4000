@@ -97,11 +97,17 @@ const screens = [
 		return text;
 	},
 
-	// visibility
+	// visibility and feels like
+	(data) => `Visib: ${data.Visibility} ${data.VisibilityUnit}   Feels Like: ${data.FeelsLike}${degree}${data.TemperatureUnit}`,
+
+	// UV and fire danger (fire danger only with BOM data)
 	(data) => {
-		const distance = `${data.Ceiling} ${data.CeilingUnit}`;
-		return `Visib: ${data.Visibility} ${data.VisibilityUnit}   Ceiling: ${data.Ceiling === 0 ? 'Unlimited' : distance}`;
+		const fire = data.bom?.daily?.days?.[0]?.fire_danger;
+		return fire ? `UV Index: ${data.UV}   Fire Danger: ${fire}` : `UV Index: ${data.UV}`;
 	},
+
+	// observation source
+	(data) => `Observations: ${data.ObservationSource}`,
 ];
 
 // internal draw function with preset parameters

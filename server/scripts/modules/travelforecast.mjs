@@ -1,6 +1,10 @@
 // travel forecast display
 import STATUS from './status.mjs';
-import { json } from './utils/fetch.mjs';
+import { getMultiPoint, getConditionText } from './utils/weather.mjs';
+import { TRAVEL_CITIES } from './utils/au-config.mjs';
+import ConversionHelpers from './utils/conversionHelpers.mjs';
+
+const TravelCities = TRAVEL_CITIES.map(([Name, lat, lon]) => ({ Name, lat, lon }));
 import { getWeatherRegionalIconFromIconLink } from './icons.mjs';
 import { DateTime } from '../vendor/auto/luxon.mjs';
 import WeatherDisplay from './weatherdisplay.mjs';
@@ -33,30 +37,28 @@ class TravelForecast extends WeatherDisplay {
 	async getData() {
 		// super checks for enabled
 		if (!super.getData()) return;
-		const forecastPromises = TravelCities.map(async (city) => {
-			try {
-				// get point then forecast
-				if (!city.point) throw new Error('No pre-loaded point');
-				const forecast = await json(`https://api.weather.gov/gridpoints/${city.point.wfo}/${city.point.x},${city.point.y}/forecast`);
-				// determine today or tomorrow (shift periods by 1 if tomorrow)
-				const todayShift = forecast.properties.periods[0].isDaytime ? 0 : 1;
-				// return a pared-down forecast
+		let forecasts;
+		try {
+			const points = await getMultiPoint(TravelCities);
+			forecasts = TravelCities.map((city, i) => {
+				const daily = points[i]?.daily;
+				if (!daily) return { name: city.Name, error: true };
+				// after 3pm local time show tomorrow
+				const hour = parseInt(points[i].current?.time?.slice(11, 13) ?? '0', 10);
+				const index = hour >= 15 ? 1 : 0;
+				const text = getConditionText(daily.weather_code[index]);
 				return {
-					today: todayShift === 0,
-					high: forecast.properties.periods[todayShift].temperature,
-					low: forecast.properties.periods[todayShift + 1].temperature,
+					today: index === 0,
+					high: ConversionHelpers.convertTemperatureUnits(daily.temperature_2m_max[index]),
+					low: ConversionHelpers.convertTemperatureUnits(daily.temperature_2m_min[index]),
 					name: city.Name,
-					icon: getWeatherRegionalIconFromIconLink(forecast.properties.periods[todayShift].icon),
+					icon: getWeatherRegionalIconFromIconLink(text, 1),
 				};
-			} catch (error) {
-				console.error(`GetTravelWeather for ${city.Name} failed`);
-				console.error(error.status, error.responseJSON);
-				return { name: city.Name, error: true };
-			}
-		});
-
-		// wait for all forecasts
-		const forecasts = await Promise.all(forecastPromises);
+			});
+		} catch (error) {
+			console.error('Travel forecast failed', error);
+			forecasts = [];
+		}
 		this.data = forecasts;
 
 		// test for some data available in at least one forecast
@@ -155,10 +157,10 @@ const getTravelCitiesDayName = (cities) => cities.reduce((dayName, city) => {
 		// today or tomorrow
 		const day = DateTime.local().plus({ days: (city.today) ? 0 : 1 });
 		// return the day
-		return day.toLocaleString({ weekday: 'long' });
+		return day.setLocale('en-AU').toLocaleString({ weekday: 'long' });
 	}
 	return dayName;
 }, '');
 
 // register display, not active by default
-registerDisplay(new TravelForecast(5, 'travel', false));
+registerDisplay(new TravelForecast(5, 'travel', true));

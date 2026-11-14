@@ -3,12 +3,14 @@ import noSleep from './utils/nosleep.mjs';
 import STATUS from './status.mjs';
 import { wrap } from './utils/calc.mjs';
 import {
-	getPoint, getMarinePoint, getGeocoding, aggregateWeatherForecastData, getAirQualityPoint,
+	getPoint, getMarinePoint, aggregateWeatherForecastData, getAirQualityPoint,
 } from './utils/weather.mjs';
 // eslint-disable-next-line import/no-cycle
 import settings from './settings.mjs';
-import NearbyCities from './utils/nearby-cities.mjs';
-import ExperimentalFeatures from './utils/experimental.mjs';
+import { getBomData } from './utils/bom.mjs';
+import {
+	abbreviateState, closestTown, nearbyTowns,
+} from './utils/au-config.mjs';
 
 import { parseQueryString } from './share.mjs';
 
@@ -71,90 +73,60 @@ const message = (data) => {
 	return console.error(`Unknown event ${data.type}`);
 };
 
+// work out a display name for the location from the search text, or the nearest town
+const locationName = (latLon) => {
+	const query = localStorage.getItem('latLonQuery') ?? parseQueryString()?.latLonQuery ?? '';
+	const parts = query.split(',').map((p) => p.trim()).filter((p) => p && p !== 'AUS' && p !== 'Australia');
+	// "Shell Cove, Wollongong, New South Wales, AUS" => city "Shell Cove", state "NSW"
+	// "2529, Oak Flats, Wollongong, New South Wales, AUS" => city "Oak Flats"
+	// postcode searches: name the place after the nearest town
+	if (parts.length > 0 && /^\d{4}$/.test(parts[0])) parts.length = 0;
+	if (parts.length === 0 || /^-?\d+(\.\d+)?$/.test(parts[0])) {
+		const town = closestTown(latLon.lat, latLon.lon);
+		return { city: town?.name ?? 'Unknown', state: town?.state ?? '' };
+	}
+	const stateCandidate = parts.length > 1 ? parts[parts.length - 1] : '';
+	return { city: parts[0], state: abbreviateState(stateCandidate) };
+};
+
+const showError = (text) => {
+	const loading = document.querySelector('#loading .instructions');
+	if (loading) loading.innerHTML = text;
+	document.querySelector('#loading').style.display = '';
+};
+
 const getWeather = async (latLon, haveDataCallback) => {
-	// get initial weather data
-	const point = await getPoint(latLon.lat, latLon.lon);
+	// get the Open-Meteo forecast and (optionally) BOM data in parallel
+	const [point, bom] = await Promise.all([
+		getPoint(latLon.lat, latLon.lon),
+		getBomData(latLon.lat, latLon.lon),
+	]);
+
+	if (!point || !point.hourly) {
+		showError('Unable to load the forecast. Please check your connection and try again.');
+		return false;
+	}
 
 	const aggregatedForecastData = aggregateWeatherForecastData(point);
 
 	if (typeof haveDataCallback === 'function') haveDataCallback(point);
 
-	// Get locality data from open-meteo and local storage
-	const localityName = localStorage.getItem('latLonQuery');
-	const storedLatLon = localStorage.getItem('latLon');
-	let locality;
-
-	// We need to check if localityName is set in localStorage
-	// if it is not set, it's likely that the page was loaded from a permalink
-	// and we need to derive the locality name from the latLon.
-
-	// We can assume this is safe because the latLon would've been set by the user
-	// during a previous search
-	if (!localityName) {
-		console.warn('getWeather:'
-			+ '\nlocalityName is not set in localStorage. Origin could be a permalink.'
-			+ '\nAttempting to derive localityName from latLonQuery.');
-
-		const parsedParameters = parseQueryString();
-		if (parsedParameters && parsedParameters.latLonQuery != null) {
-			console.warn(`getWeather: parsed localityName as: ${parsedParameters.latLonQuery}`);
-			// This is only useful if the page is refreshed
-			localStorage.setItem('latLonQuery', parsedParameters.latLonQuery);
-			// Pass the value from our query params
-			locality = await getGeocoding(parsedParameters.latLonQuery.split(',')[0]);
-		}
-	} else {
-		// 'latLonQuery' is set in server>scripts>index.mjs in the format of "Amsterdam, NLD"
-		// therefore we need to split on the "," to get the locality name for open-meteo
-		locality = await getGeocoding(localityName.split(',')[0]);
-	}
-
-	// we need to confirm that the stored latLon matches the latLon of the weather data we
-	// just retrieved. This ensures that we don't have a mismatch between the locality and the
-	// weather data
-	if (storedLatLon) {
-		const epsilon = 0.03; // ~4.1 km
-		// eslint-disable-next-line no-plusplus
-		for (let i = 0; i < locality.results.length; i++) {
-			const result = locality.results[i];
-			if (
-				Math.abs(result.latitude - latLon.lat) < epsilon
-				&& Math.abs(result.longitude - latLon.lon) < epsilon
-			) {
-				console.debug('getWeather: found a locality that matches the current latLon (rounded to 0.1)');
-				locality = {
-					results: [result],
-				};
-				break;
-			}
-		}
-	}
-
-	// set the city and state
-	const city = locality.results[0].name;
-	const { country } = locality.results[0];
-	const state = locality.results[0].admin1;	// admin1 is usually the state / province
-	const { timezone } = locality.results[0];
+	const { city, state } = locationName(latLon);
 
 	// populate the weather parameters
 	weatherParameters.latitude = latLon.lat;
 	weatherParameters.longitude = latLon.lon;
 	weatherParameters.city = city;
 	weatherParameters.state = state;
-	weatherParameters.country = country;
-	weatherParameters.timeZone = timezone;
-
-	// WeatherParameters to modify...
+	weatherParameters.country = 'Australia';
+	weatherParameters.timeZone = point.timezone ?? 'Australia/Sydney';
+	weatherParameters.point = point;
+	weatherParameters.current = point.current;
 	weatherParameters.forecast = aggregatedForecastData;
-	// weatherParameters.forecastGridData = point.properties.forecastGridData;
-	// weatherParameters.stations = stations.features;
-
-	// WeatherParameters that might be optional to modify
-	// or aren't obviously used anywhere for data retrieval...
-	weatherParameters.stationId = 'stationId-dont-matter-anymore';
-	weatherParameters.zoneId = 'zoneId-dont-matter';
-	weatherParameters.radarId = 'radarId-dont-matter';
-	weatherParameters.weatherOffice = 'weatherOffice-dont-matter';
+	weatherParameters.bom = bom;
+	weatherParameters.stationId = bom?.observations?.station?.name ?? 'Open-Meteo model';
+	weatherParameters.nearbyCities = nearbyTowns(latLon.lat, latLon.lon, { count: 4, minSpacingKm: 15, minPopulation: 3000 })
+		.map((t) => ({ city: t.name, lat: String(t.lat), lon: String(t.lon), population: String(t.population) }));
 
 	// update the main process for display purposes
 	populateWeatherParameters(weatherParameters);
@@ -169,55 +141,23 @@ const getWeather = async (latLon, haveDataCallback) => {
 
 	// call for new data on each display
 	displays.forEach((display) => display.getData(weatherParameters));
-
-	// We check for nearbyCities after calling the displays to load because it's essentially a blocking request.
-	// Generally it takes 2-3 seconds to get this data, and it looks like the application hangs while waiting.
-	const nearybyCities = JSON.parse(localStorage.getItem('nearbyCitiesFromLocality'));
-	let newNearbyCities;
-
-	// @todo - not stoked with how experimentatlFeatures is handled
-	if (ExperimentalFeatures.getExperimentalFlag()) {
-		console.warn('Experimental features enabled - you may encounter unintended behavior');
-		if (!nearybyCities) {
-			console.warn('getWeather:'
-				+ '\nnearybyCities is not set in localStorage. Origin could be a permalink.'
-				+ '\nAttempting to retrieve new cities.');
-
-			newNearbyCities = await NearbyCities.getNearbyCities(localityName.split(',')[0]).catch((error) => {
-				console.error('Error fetching nearby cities:', error);
-				return [];
-			});
-			localStorage.setItem('nearbyCitiesFromLocality', JSON.stringify(newNearbyCities));
-
-			weatherParameters.nearbyCities = newNearbyCities;
-		} else {
-			weatherParameters.nearbyCities = nearybyCities;
-		}
-	}
+	return true;
 };
 
-const getMarineForecast = async (latLon, haveDataCallback) => {
+const getMarineForecast = async (latLon) => {
 	const marinePoint = await getMarinePoint(latLon.lat, latLon.lon, 'marine');
-	const point = await getPoint(latLon.lat, latLon.lon);
-
-	if (typeof haveDataCallback === 'function') haveDataCallback(marinePoint);
-
 	displays.forEach((display) => {
 		if (display.name === 'Marine Forecast') {
-			display.getMarineData(point, marinePoint);
+			display.getMarineData(weatherParameters.point, marinePoint);
 		}
 	});
 };
 
-const getAirQualityForecast = async (latLon, haveDataCallback) => {
+const getAirQualityForecast = async (latLon) => {
 	const airQualityPoint = await getAirQualityPoint(latLon.lat, latLon.lon);
-	const point = await getPoint(latLon.lat, latLon.lon);
-
-	if (typeof haveDataCallback === 'function') haveDataCallback(airQualityPoint);
-
 	displays.forEach((display) => {
 		if (display.name === 'Air Quality') {
-			display.getAirQualityData(point, airQualityPoint);
+			display.getAirQualityData(weatherParameters.point, airQualityPoint);
 		}
 	});
 };
@@ -443,6 +383,8 @@ const registerProgress = (_progress) => {
 const populateWeatherParameters = (params) => {
 	document.querySelector('#spanCity').innerHTML = `${params.city}, `;
 	document.querySelector('#spanState').innerHTML = params.state;
+	const source = document.querySelector('#spanDataSource');
+	if (source) source.innerHTML = params.bom ? `Open-Meteo + BOM (observations from ${params.bom.observations?.station?.name ?? 'n/a'})` : 'Open-Meteo';
 	// document.querySelector('#spanStationId').innerHTML = params.stationId;
 	// document.querySelector('#spanRadarId').innerHTML = params.radarId;
 	// document.querySelector('#spanZoneId').innerHTML = params.zoneId;
@@ -462,7 +404,7 @@ const autoRefreshChange = (e) => {
 
 const AssignLastUpdate = (date) => {
 	if (date) {
-		document.querySelector('#spanLastRefresh').innerHTML = date.toLocaleString('en-US', {
+		document.querySelector('#spanLastRefresh').innerHTML = date.toLocaleString('en-AU', {
 			weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric', timeZoneName: 'short',
 		});
 		if (document.querySelector(CHK_AUTO_REFRESH_SELECTOR).checked) startAutoRefreshTimer();
@@ -472,9 +414,9 @@ const AssignLastUpdate = (date) => {
 };
 
 const latLonReceived = async (data, haveDataCallback) => {
-	await getWeather(data, haveDataCallback);
-	await getMarineForecast(data, haveDataCallback);
-	await getAirQualityForecast(data, haveDataCallback);
+	const ok = await getWeather(data, haveDataCallback);
+	if (!ok) return;
+	await Promise.all([getMarineForecast(data), getAirQualityForecast(data)]);
 	AssignLastUpdate(null);
 
 	// We can immediately start playing (auto play),

@@ -2,6 +2,8 @@ import { json } from './modules/utils/fetch.mjs';
 import noSleep from './modules/utils/nosleep.mjs';
 import { round2 } from './modules/utils/units.mjs';
 import { parseQueryString } from './modules/share.mjs';
+import { DEFAULT_LOCATION, closestTown } from './modules/utils/au-config.mjs';
+import music from './modules/music.mjs';
 import {
 	message as navMessage, hideAllCanvases, isPlaying, resize, resetStatuses, latLonReceived, stopAutoRefreshTimer, registerRefreshData,
 } from './modules/navigation.mjs';
@@ -65,12 +67,13 @@ const init = () => {
 		params: {
 			f: 'json',
 			category,
+			countryCode: 'AUS',
 			maxSuggestions: 10,
 		},
 		dataType: 'json',
 		transformResult: (response) => ({
 			suggestions: response.suggestions.map((i) => ({
-				value: i.text,
+				value: i.text.replace(/, AUS$/, ''),
 				data: i.magicKey,
 			})),
 		}),
@@ -103,6 +106,14 @@ const init = () => {
 	}
 	if (fromGPS) {
 		btnGetGpsClick();
+	}
+	// first visit: show the default location (Shell Cove, NSW)
+	if (!(query && latLon) && !fromGPS) {
+		const txtAddress = document.querySelector(TXT_ADDRESS_SELECTOR);
+		txtAddress.value = DEFAULT_LOCATION.query;
+		localStorage.setItem('latLonQuery', DEFAULT_LOCATION.query);
+		localStorage.setItem('latLon', JSON.stringify(DEFAULT_LOCATION.latLon));
+		loadData(DEFAULT_LOCATION.latLon);
 	}
 
 	document.querySelector('#btnClearQuery').addEventListener('click', () => {
@@ -153,6 +164,7 @@ const autocompleteOnSelect = async (suggestion, elem) => {
 		data: {
 			text: suggestion.value,
 			magicKey: suggestion.data,
+			countryCode: 'AUS',
 			f: 'json',
 		},
 	});
@@ -263,27 +275,7 @@ const updateAudioButton = () => {
 };
 
 const btnAudioClick = async () => {
-	const webampActive = document.documentElement.getAttribute('hide-webamp');
-
-	if (!window.webamp) {
-		console.warn('Index - Webamp not initialized yet.');
-		return;
-	}
-
-	if (webampActive != null && webampActive === 'true') {
-		console.warn('Index - Webamp is hidden, cannot toggle audio.');
-		return;
-	}
-
-	isAudioPlaying = !isAudioPlaying;
-	if (isAudioPlaying) {
-		// eslint-disable-next-line no-undef
-		await webamp.play();
-	} else {
-		// eslint-disable-next-line no-undef
-		await webamp.pause();
-	}
-
+	isAudioPlaying = await music.toggle();
 	updateAudioButton();
 };
 
@@ -437,15 +429,11 @@ const btnGetGpsClick = async () => {
 	const txtAddress = document.querySelector(TXT_ADDRESS_SELECTOR);
 	txtAddress.value = `${round2(latitude, 4)}, ${round2(longitude, 4)}`;
 
-	doRedirectToGeometry({ y: latitude, x: longitude }, (point) => {
-		const location = point.properties.relativeLocation.properties;
-		// Save the query
-		const query = `${location.city}, ${location.state}`;
-		localStorage.setItem('latLon', JSON.stringify({ lat: latitude, lon: longitude }));
-		localStorage.setItem('latLonQuery', query);
-		localStorage.setItem('latLonFromGPS', true);
-		txtAddress.value = `${location.city}, ${location.state}`;
-	});
+	const town = closestTown(latitude, longitude);
+	const query = town ? `${town.name}, ${town.state}` : txtAddress.value;
+	txtAddress.value = query;
+	doRedirectToGeometry({ y: latitude, x: longitude });
+	localStorage.setItem('latLonFromGPS', true);
 };
 
 // check for change in full screen triggered by browser and run local functions

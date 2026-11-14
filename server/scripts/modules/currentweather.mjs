@@ -45,11 +45,11 @@ class CurrentWeather extends WeatherDisplay {
 		const fill = {
 			temp: this.data.Temperature + String.fromCharCode(176),
 			condition,
-			wind: this.data.WindDirection.padEnd(3, '') + this.data.WindSpeed.toString().padStart(3, ' '),
+			wind: this.data.WindSpeed > 0 ? this.data.WindDirection.padEnd(3, ' ') + this.data.WindSpeed.toString().padStart(3, ' ') : 'Calm',
 			location: this.data.city,
 			humidity: `${this.data.Humidity}%`,
 			dewpoint: this.data.DewPoint + String.fromCharCode(176),
-			ceiling: (this.data.Ceiling === 0 ? 'Unlimited' : this.data.Ceiling + this.data.CeilingUnit),
+			ceiling: this.data.FeelsLike + String.fromCharCode(176),
 			visibility: this.data.Visibility + this.data.VisibilityUnit,
 			pressure: `${this.data.Pressure}${this.data.PressureUnit}${pressureArrow}`,
 			cloud: this.data.CloudCover ? `${this.data.CloudCover}%` : 'N/A',
@@ -58,6 +58,7 @@ class CurrentWeather extends WeatherDisplay {
 		};
 
 		if (this.data.WindGust) fill['wind-gusts'] = `Gusts to ${this.data.WindGust}`;
+		fill.location = this.data.city;
 
 		const area = this.elem.querySelector('.main');
 
@@ -147,31 +148,52 @@ const getCurrentWeatherByHourFromTime = (data) => {
 	return closestTime;
 };
 
+const round1 = (value) => Math.round(value * 10) / 10;
+
 // format the received data
 const parseData = (data) => {
-	const currentForecast = getCurrentWeatherByHourFromTime(data);
+	const hourly = getCurrentWeatherByHourFromTime(data);
+	// prefer Open-Meteo's "current" block (15 minute resolution), fall back to the nearest hour
+	const current = { ...hourly, ...(data.current ?? {}) };
+	const visibility = current.visibility ?? hourly.visibility;
 
 	// values from api are provided in metric
-	data.Temperature = ConversionHelpers.convertTemperatureUnits(Math.round(currentForecast.temperature_2m));
+	data.Temperature = ConversionHelpers.convertTemperatureUnits(Math.round(current.temperature_2m));
 	data.TemperatureUnit = ConversionHelpers.getTemperatureUnitText();
-	data.DewPoint = ConversionHelpers.convertTemperatureUnits(currentForecast.dew_point_2m);
-	data.Ceiling = ConversionHelpers.convertDistanceUnits(ConversionHelpers.calculateCeilingInKM(currentForecast.temperature_2m, currentForecast.dew_point_2m));
+	data.FeelsLike = ConversionHelpers.convertTemperatureUnits(Math.round(current.apparent_temperature));
+	data.DewPoint = ConversionHelpers.convertTemperatureUnits(Math.round(current.dew_point_2m));
+	data.Ceiling = ConversionHelpers.convertDistanceUnits(round1(ConversionHelpers.calculateCeilingInKM(current.temperature_2m, current.dew_point_2m)));
 	data.CeilingUnit = ConversionHelpers.getDistanceUnitText();
-	data.Visibility = ConversionHelpers.convertDistanceUnits((currentForecast.visibility / 1000));
+	data.Visibility = ConversionHelpers.convertDistanceUnits(Math.round(visibility / 1000));
 	data.VisibilityUnit = ConversionHelpers.getDistanceUnitText();
-	data.WindSpeed = ConversionHelpers.convertWindUnits(currentForecast.wind_speed_10m);
-	data.WindDirection = directionToNSEW(currentForecast.wind_direction_10m);
-	data.Pressure = ConversionHelpers.convertPressureUnits(currentForecast.pressure_msl);
-	data.CloudCover = currentForecast.cloud_cover ? currentForecast.cloud_cover : 0;
-	data.UV = Math.round(currentForecast.uv_index_max);
-	// data.HeatIndex = Math.round(observations.heatIndex.value);
-	// data.WindChill = Math.round(observations.windChill.value);
-	data.WindGust = ConversionHelpers.convertWindUnits(currentForecast.wind_gusts_10m);
+	data.WindSpeed = Math.round(ConversionHelpers.convertWindUnits(current.wind_speed_10m));
+	data.WindDirection = directionToNSEW(current.wind_direction_10m);
+	data.Pressure = Math.round(ConversionHelpers.convertPressureUnits(current.pressure_msl));
+	data.CloudCover = current.cloud_cover ? current.cloud_cover : 0;
+	data.UV = Math.round(hourly.uv_index_max);
+	data.WindGust = Math.round(ConversionHelpers.convertWindUnits(current.wind_gusts_10m));
 	data.WindUnit = ConversionHelpers.getWindUnitText();
-	data.Humidity = currentForecast.relative_humidity_2m;
+	data.Humidity = current.relative_humidity_2m;
 	data.PressureUnit = ConversionHelpers.getPressureUnitText();
-	data.PressureDirection = currentForecast.pressureTrend;
-	data.TextConditions = currentForecast.weather_code;
+	data.PressureDirection = hourly.pressureTrend;
+	data.TextConditions = current.weather_code;
+	data.ObservationSource = 'Open-Meteo';
+
+	// override with real BOM station observations when enabled
+	const obs = data.bom?.observations;
+	if (obs && obs.temp !== null && obs.temp !== undefined) {
+		data.Temperature = ConversionHelpers.convertTemperatureUnits(Math.round(obs.temp));
+		if (obs.temp_feels_like !== null) data.FeelsLike = ConversionHelpers.convertTemperatureUnits(Math.round(obs.temp_feels_like));
+		if (obs.humidity !== null) data.Humidity = obs.humidity;
+		if (obs.wind?.speed_kilometre !== null && obs.wind?.speed_kilometre !== undefined) {
+			data.WindSpeed = Math.round(ConversionHelpers.convertWindUnits(obs.wind.speed_kilometre));
+			data.WindDirection = obs.wind.direction === 'CALM' ? '' : obs.wind.direction;
+		}
+		if (obs.gust?.speed_kilometre !== null && obs.gust?.speed_kilometre !== undefined) {
+			data.WindGust = Math.round(ConversionHelpers.convertWindUnits(obs.gust.speed_kilometre));
+		}
+		data.ObservationSource = `BOM ${obs.station?.name ?? ''}`.trim();
+	}
 
 	return data;
 };
