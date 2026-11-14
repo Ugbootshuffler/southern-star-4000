@@ -214,7 +214,7 @@ const useLocation = (geometry) => {
 	doRedirectToGeometry(geometry);
 };
 
-// Esri "find" for a suggestion (magicKey) or free text, Australia only
+// Esri "find" for a suggestion (magicKey) or free text, Australia only. Capped at 4 seconds.
 const esriFind = async (text, magicKey) => {
 	const data = await json('https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/find', {
 		data: {
@@ -224,19 +224,19 @@ const esriFind = async (text, magicKey) => {
 			maxLocations: 1,
 			f: 'json',
 		},
-		retryCount: 1,
-		timeout: 12_000,
+		retryCount: 0,
+		timeout: 4000,
 	});
 	const loc = data?.locations?.[0];
 	if (!loc?.feature?.geometry) return null;
 	return loc.feature.geometry;
 };
 
-// Open-Meteo geocoder (Australia), searching on the place name before the first comma
+// Open-Meteo geocoder (Australia), searching on the place name before the first comma. Capped at 4 seconds.
 const openMeteoFind = async (text) => {
 	const name = text.split(',')[0].trim();
 	if (!name) return null;
-	const result = await getGeocoding(name);
+	const result = await getGeocoding(name, { timeout: 4000 });
 	const places = result?.results ?? [];
 	if (places.length === 0) return null;
 	// prefer a match in the state named in the text, if any
@@ -245,31 +245,90 @@ const openMeteoFind = async (text) => {
 	return { x: best.longitude, y: best.latitude };
 };
 
-// bundled town list (works offline)
+const STATE_NAMES = {
+	NSW: ['new south wales', 'nsw'],
+	VIC: ['victoria', 'vic'],
+	QLD: ['queensland', 'qld'],
+	SA: ['south australia', 'sa'],
+	WA: ['western australia', 'wa'],
+	TAS: ['tasmania', 'tas'],
+	NT: ['northern territory', 'nt'],
+	ACT: ['australian capital territory', 'act'],
+};
+
+// bundled town list (instant, works offline). Matches "Town" or "Town, ..., State".
 const townFind = (text) => {
-	const name = text.split(',')[0].trim().toLowerCase();
-	const town = (window.AuTowns ?? []).find((t) => t[0].toLowerCase() === name);
+	const parts = text.split(',').map((p) => p.trim().toLowerCase()).filter(Boolean);
+	if (parts.length === 0) return null;
+	const name = parts[0];
+	const matches = (window.AuTowns ?? []).filter((t) => t[0].toLowerCase() === name);
+	if (matches.length === 0) return null;
+	const rest = parts.slice(1);
+	const inState = matches.find((t) => rest.some((p) => (STATE_NAMES[t[3]] ?? []).includes(p)));
+	// several towns share a name in different states: only guess when it's unambiguous
+	const town = inState ?? (matches.length === 1 ? matches[0] : null);
 	return town ? { x: town[2], y: town[1] } : null;
 };
 
-const findPlace = async (text, magicKey) => {
-	const attempts = [
-		() => esriFind(text, magicKey),
-		() => (magicKey ? esriFind(text) : null),
-		() => openMeteoFind(text),
-		() => townFind(text),
-	];
-	// eslint-disable-next-line no-restricted-syntax
-	for (const attempt of attempts) {
-		try {
-			// eslint-disable-next-line no-await-in-loop
-			const geometry = await attempt();
-			if (geometry && Number.isFinite(Number(geometry.x)) && Number.isFinite(Number(geometry.y))) return geometry;
-		} catch (error) {
-			console.warn(`Place search step failed: ${error?.message ?? error}`);
-		}
+// resolved places saved on this device, so a return visit starts instantly
+const GEO_CACHE_KEY = 'placeCache';
+const cacheKey = (text) => text.trim().toLowerCase().replace(/\s+/g, ' ');
+const readPlaceCache = (text) => {
+	try {
+		const hit = JSON.parse(localStorage.getItem(GEO_CACHE_KEY) ?? '{}')[cacheKey(text)];
+		return hit && Number.isFinite(hit.x) && Number.isFinite(hit.y) ? hit : null;
+	} catch (e) {
+		return null;
 	}
-	return null;
+};
+const writePlaceCache = (text, geometry) => {
+	try {
+		const cache = JSON.parse(localStorage.getItem(GEO_CACHE_KEY) ?? '{}');
+		cache[cacheKey(text)] = { x: Number(geometry.x), y: Number(geometry.y), at: Date.now() };
+		// keep the 50 most recent
+		const trimmed = Object.fromEntries(Object.entries(cache).sort((a, b) => b[1].at - a[1].at).slice(0, 50));
+		localStorage.setItem(GEO_CACHE_KEY, JSON.stringify(trimmed));
+	} catch (e) { /* storage full or blocked */ }
+};
+
+const validGeometry = (g) => g && Number.isFinite(Number(g.x)) && Number.isFinite(Number(g.y))
+	&& Number(g.y) < -9 && Number(g.y) > -45 && Number(g.x) > 112 && Number(g.x) < 155;
+
+// first good Australian answer from several lookups run at the same time
+const firstGood = (promises) => new Promise((resolve) => {
+	let pending = promises.length;
+	if (pending === 0) resolve(null);
+	promises.forEach((promise) => {
+		Promise.resolve(promise).then((g) => {
+			if (validGeometry(g)) resolve(g);
+		}).catch((error) => {
+			console.warn(`Place search step failed: ${error?.message ?? error}`);
+		}).finally(() => {
+			pending -= 1;
+			if (pending === 0) resolve(null);
+		});
+	});
+	// hard stop, in case a blocked request never settles
+	setTimeout(() => resolve(null), 5000);
+});
+
+const findPlace = async (text, magicKey) => {
+	// 1. saved on this device
+	const cached = readPlaceCache(text);
+	if (cached) return cached;
+	// 2. built-in town list
+	const town = townFind(text);
+	if (validGeometry(town)) {
+		writePlaceCache(text, town);
+		return town;
+	}
+	// 3. remote geocoders in parallel, first good result wins
+	const geometry = await firstGood([
+		esriFind(text, magicKey),
+		openMeteoFind(text),
+	]);
+	if (geometry) writePlaceCache(text, geometry);
+	return geometry;
 };
 
 let lastSelect = { value: '', at: 0 };

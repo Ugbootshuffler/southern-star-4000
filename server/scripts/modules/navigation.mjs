@@ -489,12 +489,10 @@ const latLonReceived = async (data, haveDataCallback) => {
 		showError('Unable to load the forecast. Please check your connection and try again.');
 	}
 	if (!ok) return;
-	await Promise.allSettled([getMarineForecast(data), getAirQualityForecast(data)]);
+	// start the display straight away; marine and air quality fill in when they arrive
 	AssignLastUpdate(null);
-
-	// We can immediately start playing (auto play),
-	// as all data has been retrieved
 	setPlaying(true);
+	Promise.allSettled([getMarineForecast(data), getAirQualityForecast(data)]);
 };
 
 const startAutoRefreshTimer = () => {

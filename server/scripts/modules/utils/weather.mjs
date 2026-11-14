@@ -44,7 +44,7 @@ const getPoint = async (lat, lon) => {
 	for (const url of attempts) {
 		try {
 			// eslint-disable-next-line no-await-in-loop
-			const point = await json(url, { retryCount: 2, timeout: 20_000 });
+			const point = await json(url, { retryCount: 1, timeout: 8000 });
 			if (point?.hourly?.time?.length) {
 				cachePoint(lat, lon, point);
 				return point;
@@ -138,10 +138,10 @@ const getMarinePoint = async (lat, lon) => {
 	return null;
 };
 
-const getGeocoding = async (name) => {
+const getGeocoding = async (name, params = {}) => {
 	try {
-		const numResults = 100;
-		return await json(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=${numResults}&language=en&format=json&countryCode=AU`);
+		const numResults = 20;
+		return await json(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=${numResults}&language=en&format=json&countryCode=AU`, params);
 	} catch (error) {
 		console.log(`Unable to get locality with value ${name}`);
 		console.error(error);

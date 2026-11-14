@@ -88,7 +88,7 @@ const isDay = (date, lat, lon) => {
 const round1 = (v) => (v === null || v === undefined || Number.isNaN(v) ? null : Math.round(v * 10) / 10);
 
 const getMetNoPoint = async (lat, lon) => {
-	const data = await json(`https://api.met.no/weatherapi/locationforecast/2.0/complete?lat=${Number(lat).toFixed(4)}&lon=${Number(lon).toFixed(4)}`, { retryCount: 1, timeout: 20_000 });
+	const data = await json(`https://api.met.no/weatherapi/locationforecast/2.0/complete?lat=${Number(lat).toFixed(4)}&lon=${Number(lon).toFixed(4)}`, { retryCount: 0, timeout: 8000 });
 	const series = data?.properties?.timeseries;
 	if (!Array.isArray(series) || series.length === 0) throw new Error('MET Norway returned no forecast');
 
