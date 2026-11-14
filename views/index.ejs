@@ -16,15 +16,9 @@
   <link rel="icon" href="images/Logo192.png" />
   <link rel="apple-touch-icon" href="images/apple-touch-icon.png" />
   
-  <!-- Leaflet -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-  crossorigin=""/>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-    crossorigin="">
-      window.leaflet = L;
-  </script>
+  <!-- Leaflet 1.9.4 (BSD-2-Clause), self-hosted so ad/tracker blockers and CDN outages can't break the page -->
+  <link rel="stylesheet" href="scripts/vendor/leaflet/leaflet.css" />
+  <script src="scripts/vendor/leaflet/leaflet.js"></script>
 
   <% if (production) { %>
   <link rel="stylesheet" type="text/css" href="resources/ws.min.css?_=<%=production%>" />
@@ -160,7 +154,7 @@
     Built on the open-source (MIT) <a href="https://github.com/netbymatt/ws4kp" target="_blank" rel="noopener">WeatherStar 4000+</a>
     by Matt Walsh and the <a href="https://github.com/mwood77/ws4kp-international" target="_blank" rel="noopener">international fork</a> by Michael Wood.
     <br />
-    Forecast data: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0) &middot;
+    Forecast data: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0), backup <a href="https://api.met.no/" target="_blank" rel="noopener">MET Norway</a> (CC BY 4.0) &middot;
     Radar: <a href="https://www.rainviewer.com/api.html" target="_blank" rel="noopener">RainViewer</a> &middot;
     Map: <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a> / <a href="https://leafletjs.com/" target="_blank" rel="noopener">Leaflet</a> &middot;
     Towns: <a href="https://www.geonames.org/" target="_blank" rel="noopener">GeoNames</a> (CC BY 4.0)

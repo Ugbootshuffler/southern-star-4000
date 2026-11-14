@@ -9,7 +9,7 @@
 		"lint": "eslint ./server/scripts/**/*.mjs",
 		"lint:fix": "eslint --fix ./server/scripts/**/*.mjs",
 		"start": "node index.js",
-		"copy-assets": "mkdir -p docs && cp -r ./server/images ./server/fonts ./server/music docs/ && cp views/credits.html LICENSE docs/ && cp server/favicon.ico server/images/apple-touch-icon.png docs/ 2>/dev/null; touch docs/.nojekyll",
+		"copy-assets": "mkdir -p docs && cp -r ./server/images ./server/fonts ./server/music docs/ && mkdir -p docs/scripts/vendor && cp -r ./server/scripts/vendor/leaflet docs/scripts/vendor/ && cp views/credits.html LICENSE docs/ && cp server/favicon.ico server/images/apple-touch-icon.png docs/ 2>/dev/null; touch docs/.nojekyll",
 		"build": "rm -rf docs/ && gulp && npm run copy-assets",
 		"dev": "nodemon index.js"
 	},

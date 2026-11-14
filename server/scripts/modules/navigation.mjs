@@ -91,25 +91,63 @@ const locationName = (latLon) => {
 
 const showError = (text) => {
 	const loading = document.querySelector('#loading .instructions');
-	if (loading) loading.innerHTML = text;
+	if (loading) {
+		loading.innerHTML = '';
+		const p = document.createElement('div');
+		p.textContent = text;
+		const retry = document.createElement('button');
+		retry.type = 'button';
+		retry.className = 'retry-button';
+		retry.textContent = 'Try again';
+		retry.style.cssText = 'margin-top:12px;font-size:20px;padding:6px 18px;cursor:pointer;';
+		retry.addEventListener('click', () => { loading.textContent = 'Loading...'; loadTwcData(); });
+		loading.append(p, retry);
+	}
 	document.querySelector('#loading').style.display = '';
 };
 
+// run something optional; log and carry on if it fails
+const softly = async (label, fn) => {
+	try {
+		return await fn();
+	} catch (error) {
+		console.warn(`${label} failed (optional, continuing): ${error?.message ?? error}`);
+		return null;
+	}
+};
+
+let errorRetryTimer = null;
+
 const getWeather = async (latLon, haveDataCallback) => {
 	// get the Open-Meteo forecast and (optionally) BOM data in parallel
+	// BOM is optional: it can never stop the Open-Meteo forecast from showing
 	const [point, bom] = await Promise.all([
 		getPoint(latLon.lat, latLon.lon),
-		getBomData(latLon.lat, latLon.lon),
+		softly('BOM data', () => getBomData(latLon.lat, latLon.lon)),
 	]);
 
 	if (!point || !point.hourly) {
-		showError('Unable to load the forecast. Please check your connection and try again.');
+		const err = getPoint.lastError;
+		let reason = '';
+		if (err?.name === 'AbortError') reason = ' (the weather service took too long to answer)';
+		else if (/ 429 /.test(err?.message ?? '')) reason = ' (the weather service is busy, rate limited)';
+		else if (/Fetch error (\d+)/.test(err?.message ?? '')) reason = ` (weather service error ${err.message.match(/Fetch error (\d+)/)[1]})`;
+		else if (err) reason = ' (could not reach the weather service)';
+		showError(`Unable to load the forecast${reason}. Please check your connection and try again. Retrying automatically in 30 seconds.`);
+		clearTimeout(errorRetryTimer);
+		errorRetryTimer = setTimeout(() => loadTwcData(), 30_000);
 		return false;
 	}
+	clearTimeout(errorRetryTimer);
 
-	const aggregatedForecastData = aggregateWeatherForecastData(point);
+	let aggregatedForecastData = {};
+	try {
+		aggregatedForecastData = aggregateWeatherForecastData(point);
+	} catch (error) {
+		console.error('Unable to summarise the forecast', error);
+	}
 
-	if (typeof haveDataCallback === 'function') haveDataCallback(point);
+	if (typeof haveDataCallback === 'function') softly('callback', () => haveDataCallback(point));
 
 	const { city, state } = locationName(latLon);
 
@@ -126,7 +164,9 @@ const getWeather = async (latLon, haveDataCallback) => {
 	weatherParameters.bom = bom;
 	weatherParameters.stationId = bom?.observations?.station?.name ?? 'Open-Meteo model';
 	weatherParameters.nearbyCities = nearbyTowns(latLon.lat, latLon.lon, { count: 4, minSpacingKm: 15, minPopulation: 3000 })
-		.map((t) => ({ city: t.name, lat: String(t.lat), lon: String(t.lon), population: String(t.population) }));
+		.map((t) => ({
+			city: t.name, lat: String(t.lat), lon: String(t.lon), population: String(t.population),
+		}));
 
 	// update the main process for display purposes
 	populateWeatherParameters(weatherParameters);
@@ -135,29 +175,34 @@ const getWeather = async (latLon, haveDataCallback) => {
 	hideAllCanvases();
 	document.querySelector('#loading').style.display = 'none';
 	if (progress) {
-		await progress.drawCanvas();
-		progress.showCanvas();
+		await softly('progress screen', async () => {
+			await progress.drawCanvas();
+			progress.showCanvas();
+		});
 	}
 
-	// call for new data on each display
-	displays.forEach((display) => display.getData(weatherParameters));
+	// call for new data on each display; one display failing (eg radar) must not stop the others
+	displays.forEach((display) => {
+		if (!display) return;
+		softly(`${display.name ?? 'display'} data`, () => display.getData(weatherParameters));
+	});
 	return true;
 };
 
 const getMarineForecast = async (latLon) => {
-	const marinePoint = await getMarinePoint(latLon.lat, latLon.lon, 'marine');
+	const marinePoint = await softly('Marine forecast', () => getMarinePoint(latLon.lat, latLon.lon, 'marine'));
 	displays.forEach((display) => {
-		if (display.name === 'Marine Forecast') {
-			display.getMarineData(weatherParameters.point, marinePoint);
+		if (display?.name === 'Marine Forecast') {
+			softly('Marine display', () => display.getMarineData(weatherParameters.point, marinePoint));
 		}
 	});
 };
 
 const getAirQualityForecast = async (latLon) => {
-	const airQualityPoint = await getAirQualityPoint(latLon.lat, latLon.lon);
+	const airQualityPoint = await softly('Air quality', () => getAirQualityPoint(latLon.lat, latLon.lon));
 	displays.forEach((display) => {
-		if (display.name === 'Air Quality') {
-			display.getAirQualityData(weatherParameters.point, airQualityPoint);
+		if (display?.name === 'Air Quality') {
+			softly('Air quality display', () => display.getAirQualityData(weatherParameters.point, airQualityPoint));
 		}
 	});
 };
@@ -384,7 +429,10 @@ const populateWeatherParameters = (params) => {
 	document.querySelector('#spanCity').innerHTML = `${params.city}, `;
 	document.querySelector('#spanState').innerHTML = params.state;
 	const source = document.querySelector('#spanDataSource');
-	if (source) source.innerHTML = params.bom ? `Open-Meteo + BOM (observations from ${params.bom.observations?.station?.name ?? 'n/a'})` : 'Open-Meteo';
+	const base = params.point?.source ?? 'Open-Meteo';
+	let sourceText = params.bom ? `${base} + BOM (observations from ${params.bom.observations?.station?.name ?? 'n/a'})` : base;
+	if (params.point?.fromCache) sourceText += ` (offline: saved forecast from ${new Date(params.point.cachedAt).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })})`;
+	if (source) source.textContent = sourceText;
 	// document.querySelector('#spanStationId').innerHTML = params.stationId;
 	// document.querySelector('#spanRadarId').innerHTML = params.radarId;
 	// document.querySelector('#spanZoneId').innerHTML = params.zoneId;
@@ -414,9 +462,15 @@ const AssignLastUpdate = (date) => {
 };
 
 const latLonReceived = async (data, haveDataCallback) => {
-	const ok = await getWeather(data, haveDataCallback);
+	let ok = false;
+	try {
+		ok = await getWeather(data, haveDataCallback);
+	} catch (error) {
+		console.error('Unexpected error while loading the forecast', error);
+		showError('Unable to load the forecast. Please check your connection and try again.');
+	}
 	if (!ok) return;
-	await Promise.all([getMarineForecast(data), getAirQualityForecast(data)]);
+	await Promise.allSettled([getMarineForecast(data), getAirQualityForecast(data)]);
 	AssignLastUpdate(null);
 
 	// We can immediately start playing (auto play),

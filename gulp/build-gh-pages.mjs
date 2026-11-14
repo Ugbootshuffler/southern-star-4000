@@ -80,7 +80,7 @@ const compressHtml = async () => {
 
 	return src('views/*.ejs')
 		.pipe(ejs({
-			production: true,
+			production: `v${version}-${Date.now()}`, // also used as a cache-buster for the JS/CSS
 			version,
 		}, {}, { ext: '.html' })) // Prevents EJS from escaping values
 		.pipe(rename({ extname: '.html' }))

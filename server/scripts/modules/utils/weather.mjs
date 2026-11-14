@@ -1,16 +1,75 @@
 import { json } from './fetch.mjs';
+import { getMetNoPoint } from './metno.mjs';
 
 const openMeteoAdditionalForecastParameters = '&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m,dew_point_2m,visibility,uv_index&daily=temperature_2m_max,uv_index_max,temperature_2m_min,weather_code,sunrise,sunset,precipitation_probability_max,precipitation_sum&forecast_days=8&hourly=temperature_2m,relative_humidity_2m,dew_point_2m,apparent_temperature,precipitation_probability,precipitation,rain,showers,snowfall,snow_depth,weather_code,pressure_msl,surface_pressure,cloud_cover,visibility,evapotranspiration,et0_fao_evapotranspiration,vapour_pressure_deficit,uv_index,uv_index_clear_sky,is_day,sunshine_duration,wet_bulb_temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m&models=best_match&timezone=auto';
 const openMeteoAdditionalForecastParametersMarine = '&hourly=wave_height,wind_wave_direction,swell_wave_height,swell_wave_height,swell_wave_direction,swell_wave_period&timezone=auto&forecast_days=1';
 
-const getPoint = async (lat, lon) => {
+// a smaller request used if the full one fails (fewer, only the commonly supported variables)
+const openMeteoMinimalForecastParameters = '&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m&daily=temperature_2m_max,temperature_2m_min,weather_code,sunrise,sunset,precipitation_probability_max,precipitation_sum,uv_index_max&forecast_days=8&hourly=temperature_2m,relative_humidity_2m,dew_point_2m,apparent_temperature,precipitation_probability,precipitation,weather_code,pressure_msl,cloud_cover,visibility,uv_index,is_day,wind_speed_10m,wind_direction_10m,wind_gusts_10m&timezone=auto';
+
+const POINT_CACHE_KEY = 'lastForecastPoint';
+const POINT_CACHE_MAX_AGE_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+const cachePoint = (lat, lon, point) => {
 	try {
-		return await json(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}${openMeteoAdditionalForecastParameters}`);
-	} catch (error) {
-		console.log(`Unable to get point ${lat}, ${lon}`);
-		console.error(error);
-		return false;
+		localStorage.setItem(POINT_CACHE_KEY, JSON.stringify({
+			lat, lon, savedAt: Date.now(), point,
+		}));
+	} catch (e) {
+		// storage full or blocked: not fatal
 	}
+};
+
+const cachedPoint = (lat, lon) => {
+	try {
+		const cached = JSON.parse(localStorage.getItem(POINT_CACHE_KEY) ?? 'null');
+		if (!cached?.point?.hourly) return null;
+		if (Math.abs(cached.lat - lat) > 0.01 || Math.abs(cached.lon - lon) > 0.01) return null;
+		if (Date.now() - cached.savedAt > POINT_CACHE_MAX_AGE_MS) return null;
+		return { ...cached.point, fromCache: true, cachedAt: cached.savedAt };
+	} catch (e) {
+		return null;
+	}
+};
+
+// the main forecast. Tries the full request (with retries), then a smaller request,
+// then the last good forecast for this location saved on the device.
+const getPoint = async (lat, lon) => {
+	const attempts = [
+		`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}${openMeteoAdditionalForecastParameters}`,
+		`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}${openMeteoMinimalForecastParameters}`,
+	];
+	let lastError;
+	// eslint-disable-next-line no-restricted-syntax
+	for (const url of attempts) {
+		try {
+			// eslint-disable-next-line no-await-in-loop
+			const point = await json(url, { retryCount: 2, timeout: 20_000 });
+			if (point?.hourly?.time?.length) {
+				cachePoint(lat, lon, point);
+				return point;
+			}
+			lastError = new Error('Forecast response had no hourly data');
+		} catch (error) {
+			lastError = error;
+			console.warn(`Forecast request failed for ${lat}, ${lon}: ${error?.message ?? error}`);
+		}
+	}
+	// backup source if Open-Meteo can't be reached
+	try {
+		const point = await getMetNoPoint(lat, lon);
+		console.warn('Open-Meteo unavailable, using MET Norway backup forecast');
+		return point;
+	} catch (error) {
+		console.warn(`Backup forecast (MET Norway) failed: ${error?.message ?? error}`);
+	}
+	const cached = cachedPoint(lat, lon);
+	if (cached) {
+		console.warn('Using the last saved forecast for this location');
+		return cached;
+	}
+	getPoint.lastError = lastError;
+	return false;
 };
 
 const getMarineDataModels = () => {
@@ -45,7 +104,7 @@ function isValidMarineResponse(data) {
 
 const getAirQualityPoint = async (lat, lon) => {
 	try {
-		return await json(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&hourly=pm2_5&forecast_days=1&domains=cams_global`);
+		return await json(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&hourly=pm2_5&forecast_days=1&domains=cams_global`, { retryCount: 1 });
 	} catch (error) {
 		console.log(`Unable to get Air Quality for point ${lat}, ${lon}`);
 		console.error(error);
@@ -122,7 +181,7 @@ const getMultiPoint = async (locations) => {
 	if (locations.length === 0) return [];
 	const lats = locations.map((l) => l.lat).join(',');
 	const lons = locations.map((l) => l.lon).join(',');
-	const result = await json(`https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&current=temperature_2m,relative_humidity_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m,pressure_msl&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=3&timezone=auto`);
+	const result = await json(`https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&current=temperature_2m,relative_humidity_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m,pressure_msl&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=3&timezone=auto`, { retryCount: 1 });
 	return Array.isArray(result) ? result : [result];
 };
 

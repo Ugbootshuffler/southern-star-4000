@@ -201,7 +201,8 @@ const getWeatherIconFromIconLink = (text, timeZone, extendedForecast) => {
 
 	const nightTime = isNightTime(timeZone);
 	let tidyText;
-	if (text.length > 3) {
+	// condition names (eg "Fog", "Partly cloudy") are matched in lower-case-with-dashes form
+	if (typeof text === 'string' && !/^\d+$/.test(text)) {
 		tidyText = text.toLowerCase().replaceAll(' ', '-');
 	} else {
 		tidyText = text;

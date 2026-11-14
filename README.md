@@ -78,6 +78,11 @@ build command `npm run build` and publish directory `docs`.
 
 * Code: MIT (see LICENSE). Keep the copyright notices for Matt Walsh and Michael Wood.
 * Forecast data: Open-Meteo, CC BY 4.0 (attribution shown on the page and credits page).
+  If Open-Meteo can't be reached the page falls back to MET Norway (api.met.no, CC BY 4.0), then to the
+  last forecast saved on the device (up to 6 hours old). Optional feeds (marine, air quality, radar, BOM)
+  fail soft and never stop the main forecast.
+* Leaflet 1.9.4 is bundled (server/scripts/vendor/leaflet, BSD-2) instead of loaded from a CDN, so
+  content blockers can't break the radar.
   Open-Meteo's free API is for non-commercial use (under 10,000 calls/day per user).
 * Radar: RainViewer public Weather Maps API: free for personal, educational and small-scale community use; a visible "RainViewer" credit with a link is required (shown under the display).
 * Towns: GeoNames, CC BY 4.0.

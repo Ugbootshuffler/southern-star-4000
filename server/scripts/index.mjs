@@ -99,16 +99,23 @@ const init = () => {
 	const query = parsedParameters.latLonQuery ?? localStorage.getItem('latLonQuery');
 	const latLon = parsedParameters.latLon ?? localStorage.getItem('latLon');
 	const fromGPS = localStorage.getItem('latLonFromGPS') && !loadFromParsed;
-	if (query && latLon && !fromGPS) {
+	let savedLatLon = null;
+	try {
+		savedLatLon = typeof latLon === 'string' ? JSON.parse(latLon) : latLon;
+		if (!(Number.isFinite(Number(savedLatLon?.lat)) && Number.isFinite(Number(savedLatLon?.lon)))) savedLatLon = null;
+	} catch (e) {
+		savedLatLon = null;
+	}
+	if (query && savedLatLon && !fromGPS) {
 		const txtAddress = document.querySelector(TXT_ADDRESS_SELECTOR);
 		txtAddress.value = query;
-		loadData(JSON.parse(latLon));
+		loadData(savedLatLon);
 	}
 	if (fromGPS) {
 		btnGetGpsClick();
 	}
 	// first visit: show the default location (Shell Cove, NSW)
-	if (!(query && latLon) && !fromGPS) {
+	if (!(query && savedLatLon) && !fromGPS) {
 		const txtAddress = document.querySelector(TXT_ADDRESS_SELECTOR);
 		txtAddress.value = DEFAULT_LOCATION.query;
 		localStorage.setItem('latLonQuery', DEFAULT_LOCATION.query);
@@ -404,8 +411,19 @@ const postMessage = (type, myMessage = {}) => {
 	navMessage({ type, message: myMessage });
 };
 
+// resolves with a position, or null if location is denied, unavailable or too slow
 const getPosition = async () => new Promise((resolve) => {
-	navigator.geolocation.getCurrentPosition(resolve);
+	const timer = setTimeout(() => resolve(null), 20_000);
+	try {
+		navigator.geolocation.getCurrentPosition(
+			(position) => { clearTimeout(timer); resolve(position); },
+			(error) => { clearTimeout(timer); console.warn(`Location unavailable: ${error?.message ?? error}`); resolve(null); },
+			{ enableHighAccuracy: false, timeout: 15_000, maximumAge: 10 * 60 * 1000 },
+		);
+	} catch (e) {
+		clearTimeout(timer);
+		resolve(null);
+	}
 });
 
 const btnGetGpsClick = async () => {
@@ -424,6 +442,21 @@ const btnGetGpsClick = async () => {
 
 	// get position
 	const position = await getPosition();
+	if (!position) {
+		// location denied or unavailable: fall back to the last searched place or the default
+		btn.classList.remove('active');
+		localStorage.removeItem('latLonFromGPS');
+		const saved = (() => { try { return JSON.parse(localStorage.getItem('latLon')); } catch (e) { return null; } })();
+		const txt = document.querySelector(TXT_ADDRESS_SELECTOR);
+		if (saved?.lat !== undefined) {
+			txt.value = localStorage.getItem('latLonQuery') ?? DEFAULT_LOCATION.query;
+			loadData(saved);
+		} else {
+			txt.value = DEFAULT_LOCATION.query;
+			loadData(DEFAULT_LOCATION.latLon);
+		}
+		return;
+	}
 	const { latitude, longitude } = position.coords;
 
 	const txtAddress = document.querySelector(TXT_ADDRESS_SELECTOR);

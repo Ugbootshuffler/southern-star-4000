@@ -4,13 +4,14 @@ const json = (url, params) => fetchAsync(url, 'json', params);
 const text = (url, params) => fetchAsync(url, 'text', params);
 const blob = (url, params) => fetchAsync(url, 'blob', params);
 
+const DEFAULT_TIMEOUT_MS = 20_000;
+
 const fetchAsync = async (_url, responseType, _params = {}) => {
 	// combine default and provided parameters
 	const params = {
 		method: 'GET',
-		mode: 'cors',
-		type: 'GET',
 		retryCount: 0,
+		timeout: DEFAULT_TIMEOUT_MS,
 		..._params,
 	};
 	// store original number of retries
@@ -20,15 +21,10 @@ const fetchAsync = async (_url, responseType, _params = {}) => {
 	let corsUrl = _url;
 	if (params.cors === true) corsUrl = rewriteUrl(_url);
 	const url = new URL(corsUrl, window.location.href);
-	// match the security protocol when not on localhost
-	// url.protocol = window.location.hostname === 'localhost' ? url.protocol : window.location.protocol;
 	// add parameters if necessary
 	if (params.data) {
 		Object.keys(params.data).forEach((key) => {
-			// get the value
-			const value = params.data[key];
-			// add to the url
-			url.searchParams.append(key, value);
+			url.searchParams.append(key, params.data[key]);
 		});
 	}
 
@@ -50,35 +46,51 @@ const fetchAsync = async (_url, responseType, _params = {}) => {
 	}
 };
 
-// fetch with retry and back-off
-const doFetch = (url, params) => new Promise((resolve, reject) => {
-	fetch(url, params).then((response) => {
-		if (params.retryCount > 0) {
-			// 500 status codes should be retried after a short backoff
-			if (response.status >= 500 && response.status <= 599 && params.retryCount > 0) {
-				// call the "still waiting" function
-				if (typeof params.stillWaiting === 'function' && params.retryCount === params.originalRetries) {
-					params.stillWaiting();
-				}
-				// decrement and retry
-				const newParams = {
-					...params,
-					retryCount: params.retryCount - 1,
-				};
-				return resolve(delay(retryDelay(params.originalRetries - newParams.retryCount), doFetch, url, newParams));
-			}
-			// not 500 status
-			return resolve(response);
-		}
-		// out of retries
-		return resolve(response);
-	})
-		.catch((error) => reject(error));
+// only pass standard options to fetch(); a plain GET with no custom headers or credentials
+// stays a "simple" CORS request (no preflight) and doesn't send cookies or a referrer, which
+// keeps privacy browsers such as Brave (Shields) happy
+const fetchInit = (params) => ({
+	method: params.method,
+	mode: 'cors',
+	credentials: 'omit',
+	referrerPolicy: 'no-referrer',
+	cache: params.cacheMode ?? 'default',
 });
 
-const delay = (time, func, ...args) => new Promise((resolve) => {
+const singleFetch = async (url, params) => {
+	const controller = typeof AbortController === 'function' ? new AbortController() : null;
+	const timer = controller && params.timeout ? setTimeout(() => controller.abort(), params.timeout) : null;
+	try {
+		return await fetch(url, { ...fetchInit(params), signal: controller?.signal });
+	} finally {
+		if (timer) clearTimeout(timer);
+	}
+};
+
+// fetch with retry and back-off
+// retries on network errors, timeouts, 429 and 5xx responses
+const doFetch = async (url, params) => {
+	const retriesLeft = params.retryCount ?? 0;
+	let response;
+	try {
+		response = await singleFetch(url, params);
+	} catch (error) {
+		if (retriesLeft <= 0) throw error;
+		console.warn(`Request failed (${error?.name ?? error}), retrying: ${url}`);
+		return delay(retryDelay(params.originalRetries - retriesLeft + 1), doFetch, url, { ...params, retryCount: retriesLeft - 1 });
+	}
+	const retryable = response.status === 429 || (response.status >= 500 && response.status <= 599);
+	if (retryable && retriesLeft > 0) {
+		// call the "still waiting" function
+		if (typeof params.stillWaiting === 'function' && retriesLeft === params.originalRetries) params.stillWaiting();
+		return delay(retryDelay(params.originalRetries - retriesLeft + 1), doFetch, url, { ...params, retryCount: retriesLeft - 1 });
+	}
+	return response;
+};
+
+const delay = (time, func, ...args) => new Promise((resolve, reject) => {
 	setTimeout(() => {
-		resolve(func(...args));
+		Promise.resolve().then(() => func(...args)).then(resolve, reject);
 	}, time);
 });
 
