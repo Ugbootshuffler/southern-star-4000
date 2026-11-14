@@ -7,15 +7,25 @@ import { geohash } from './au-config.mjs';
 
 const BOM_API = 'https://api.weather.bom.gov.au/v1';
 
+// on/off comes from the saved per-device setting (the BOM button); a permalink parameter is
+// only used when this device has never set it
 const isBomEnabled = () => {
 	try {
 		const stored = JSON.parse(localStorage.getItem('Settings') ?? '{}');
+		if (typeof stored.bomData === 'boolean') return stored.bomData;
 		const url = new URLSearchParams(window.location.search).get('settings-bomData-checkbox');
-		if (url !== null) return url === 'true';
-		return stored.bomData === true;
+		return url === 'true';
 	} catch (e) {
 		return false;
 	}
+};
+
+// small one-line notice under the location bar (BOM status messages)
+const showBomNotice = (text) => {
+	const notice = document.querySelector('#bomNotice');
+	if (!notice) return;
+	notice.textContent = text || '';
+	notice.hidden = !text;
 };
 
 const safe = async (promise) => {
@@ -94,6 +104,7 @@ const bomIconToCondition = (descriptor) => BOM_ICON_TO_CONDITION[descriptor] ?? 
 
 export {
 	isBomEnabled,
+	showBomNotice,
 	getBomData,
 	getObservations,
 	bomIconToCondition,

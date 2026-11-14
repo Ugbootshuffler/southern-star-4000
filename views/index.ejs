@@ -72,7 +72,9 @@
 			</button>
 			<button id="btnGetLatLng" type="submit">GO</button>
 			<button id="btnClearQuery" type="reset">Reset</button>
+			<button id="btnBom" type="button" class="bom-toggle" aria-pressed="false" title="Use Bureau of Meteorology data (personal use only)">BOM: OFF</button>
 		</div>
+		<div id="bomNotice" class="bom-notice" role="status" aria-live="polite" hidden></div>
   </div>
   <div id="version" style="display:none">
     <%- version %>

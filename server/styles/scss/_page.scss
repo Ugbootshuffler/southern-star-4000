@@ -30,8 +30,9 @@ body {
 
 	.buttons {
 		display: inline-block;
-		width: 150px;
+		width: auto;
 		text-align: right;
+		white-space: nowrap;
 
 		#imgGetGps {
 			height: 13px;
@@ -86,8 +87,37 @@ body {
 		font-family: "Star4000";
 	}
 
+	#btnBom {
+		min-width: 92px;
+
+		&.on {
+			background-color: #ffff00;
+			color: #000080;
+			border-color: #000080;
+			font-weight: bold;
+		}
+	}
+
+	.bom-notice {
+		font-size: 11pt;
+		margin: 4px 0;
+		padding: 3px 8px;
+		background-color: #000080;
+		color: #ffff00;
+		border: 1px solid darkgray;
+
+		&[hidden] {
+			display: none;
+		}
+	}
+
 	#txtAddress {
-		width: calc(100% - 170px);
+		@media (max-width: 600px) {
+			width: calc(100% - 12px) !important;
+			max-width: none;
+		}
+
+		width: calc(100% - 270px);
 		max-width: 490px;
 		font-size: 16pt;
 		min-width: 200px;

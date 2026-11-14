@@ -7,7 +7,7 @@ import {
 } from './utils/weather.mjs';
 // eslint-disable-next-line import/no-cycle
 import settings from './settings.mjs';
-import { getBomData } from './utils/bom.mjs';
+import { getBomData, isBomEnabled, showBomNotice } from './utils/bom.mjs';
 import {
 	abbreviateState, closestTown, nearbyTowns,
 } from './utils/au-config.mjs';
@@ -139,6 +139,21 @@ const getWeather = async (latLon, haveDataCallback) => {
 		return false;
 	}
 	clearTimeout(errorRetryTimer);
+
+	// BOM status: if it's switched on but didn't load, quietly carry on with Open-Meteo
+	try {
+		const notice = document.querySelector('#bomNotice');
+		const firstNote = notice?.textContent?.startsWith('BOM data is for personal use');
+		if (isBomEnabled()) {
+			if (!bom) showBomNotice('BOM unavailable, using Open-Meteo');
+			else if (!bom.observations) showBomNotice('BOM observations unavailable, using Open-Meteo for current conditions');
+			else if (!firstNote) showBomNotice('');
+		} else if (!firstNote) {
+			showBomNotice('');
+		}
+	} catch (e) {
+		// never let the notice break the page
+	}
 
 	let aggregatedForecastData = {};
 	try {

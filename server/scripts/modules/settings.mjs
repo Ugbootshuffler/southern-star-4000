@@ -1,5 +1,6 @@
 import Setting from './utils/setting.mjs';
 import btnNavigateRefreshClick from '../index.mjs';
+import { showBomNotice } from './utils/bom.mjs';
 
 document.addEventListener('DOMContentLoaded', () => {
 	init();
@@ -85,6 +86,8 @@ const init = () => {
 	const settingsSection = document.querySelector('#settings');
 	settingsSection.innerHTML = '';
 	settingsSection.append(...settingHtml);
+
+	initBomButton();
 };
 
 const temperatureChangeUnits = (value) => {
@@ -129,11 +132,51 @@ const hoursChangeFormat = (value) => {
 	}
 };
 
+const updateBomButton = (value) => {
+	const btn = document.querySelector('#btnBom');
+	if (!btn) return;
+	btn.textContent = value ? 'BOM: ON' : 'BOM: OFF';
+	btn.classList.toggle('on', !!value);
+	btn.setAttribute('aria-pressed', value ? 'true' : 'false');
+};
+
+const BOM_NOTE_KEY = 'bomNoteShown';
+
 const bomDataChange = (value) => {
 	document.documentElement.setAttribute('bom-data', value);
-	// reload the data with the new source (skipped during start-up)
-	if (bomDataChange.initialised) btnNavigateRefreshClick();
+	updateBomButton(value);
+	if (bomDataChange.initialised) {
+		if (value) {
+			let shown = false;
+			try { shown = localStorage.getItem(BOM_NOTE_KEY) === 'true'; } catch (e) { /* ignore */ }
+			if (!shown) {
+				showBomNotice('BOM data is for personal use only. If it doesn\'t load, switch it off.');
+				try { localStorage.setItem(BOM_NOTE_KEY, 'true'); } catch (e) { /* ignore */ }
+			} else {
+				showBomNotice('');
+			}
+		} else {
+			showBomNotice('');
+		}
+		// reload the data with the new source (skipped during start-up)
+		btnNavigateRefreshClick();
+	}
 	bomDataChange.initialised = true;
+};
+
+// the BOM toggle button beside the location bar
+const initBomButton = () => {
+	const btn = document.querySelector('#btnBom');
+	if (!btn || btn.dataset.ready) return;
+	btn.dataset.ready = 'true';
+	updateBomButton(settings.bomData.value);
+	btn.addEventListener('click', () => {
+		try {
+			settings.bomData.value = !settings.bomData.value;
+		} catch (error) {
+			console.warn('Unable to change the BOM setting', error);
+		}
+	});
 };
 
 const scanLinesChange = (value) => {
