@@ -79,7 +79,7 @@ build command `npm run build` and publish directory `docs`.
 * Code: MIT (see LICENSE). Keep the copyright notices for Matt Walsh and Michael Wood.
 * Forecast data: Open-Meteo, CC BY 4.0 (attribution shown on the page and credits page).
   Open-Meteo's free API is for non-commercial use (under 10,000 calls/day per user).
-* Radar: RainViewer public API (free tier, attribution requested).
+* Radar: RainViewer public Weather Maps API: free for personal, educational and small-scale community use; a visible "RainViewer" credit with a link is required (shown under the display).
 * Towns: GeoNames, CC BY 4.0.
 * Music: Kevin MacLeod, CC BY 4.0 (credit on the credits page; do not remove it).
 * Fonts/icons: inherited from WeatherStar 4000+ (TWCClassics community); see `server/fonts/ReadMe.txt`.
