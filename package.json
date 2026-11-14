@@ -1,6 +1,6 @@
 {
 	"name": "southern-star-4000",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"description": "Retro 1990s-style local weather display for Australia, adapted from WeatherStar 4000+ (MIT).",
 	"main": "index.js",
 	"scripts": {

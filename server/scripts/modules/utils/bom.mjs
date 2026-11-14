@@ -38,22 +38,22 @@ const safe = async (promise) => {
 };
 
 const getObservations = async (lat, lon) => {
-	const result = await safe(json(`${BOM_API}/locations/${geohash(lat, lon, 6)}/observations`));
+	const result = await safe(json(`${BOM_API}/locations/${geohash(lat, lon, 6)}/observations`, { timeout: 8000 }));
 	return result?.data ?? null;
 };
 
 const getDailyForecast = async (lat, lon) => {
-	const result = await safe(json(`${BOM_API}/locations/${geohash(lat, lon, 6)}/forecasts/daily`));
+	const result = await safe(json(`${BOM_API}/locations/${geohash(lat, lon, 6)}/forecasts/daily`, { timeout: 8000 }));
 	if (!result?.data) return null;
 	return { days: result.data, issued: result.metadata?.issue_time };
 };
 
 const getWarnings = async (lat, lon) => {
-	const result = await safe(json(`${BOM_API}/locations/${geohash(lat, lon, 6)}/warnings`));
+	const result = await safe(json(`${BOM_API}/locations/${geohash(lat, lon, 6)}/warnings`, { timeout: 8000 }));
 	const list = result?.data ?? [];
 	// fetch the full text of each warning (limit 5)
 	const detailed = await Promise.all(list.slice(0, 5).map(async (warning) => {
-		const detail = await safe(json(`${BOM_API}/warnings/${warning.id}`));
+		const detail = await safe(json(`${BOM_API}/warnings/${warning.id}`, { timeout: 5000 }));
 		return { ...warning, message: detail?.data?.message ?? '' };
 	}));
 	return detailed;

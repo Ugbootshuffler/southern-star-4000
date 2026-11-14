@@ -123,7 +123,11 @@ const getWeather = async (latLon, haveDataCallback) => {
 	// BOM is optional: it can never stop the Open-Meteo forecast from showing
 	const [point, bom] = await Promise.all([
 		getPoint(latLon.lat, latLon.lon),
-		softly('BOM data', () => getBomData(latLon.lat, latLon.lon)),
+		softly('BOM data', () => Promise.race([
+			getBomData(latLon.lat, latLon.lon),
+			// BOM must never hold up the forecast: give up after 10 seconds
+			new Promise((resolve) => { setTimeout(() => resolve(null), 10_000); }),
+		])),
 	]);
 
 	if (!point || !point.hourly) {

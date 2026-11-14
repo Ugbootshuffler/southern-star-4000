@@ -1,4 +1,5 @@
 import { json } from './modules/utils/fetch.mjs';
+import { getGeocoding } from './modules/utils/weather.mjs';
 import noSleep from './modules/utils/nosleep.mjs';
 import { round2 } from './modules/utils/units.mjs';
 import { parseQueryString } from './modules/share.mjs';
@@ -54,8 +55,14 @@ const init = () => {
 	window.addEventListener('resize', fullScreenResizeCheck);
 	fullScreenResizeCheck.wasFull = false;
 
-	document.querySelector(TXT_ADDRESS_SELECTOR).addEventListener('keydown', (key) => { if (key.code === 'Enter') formSubmit(); });
-	document.querySelector('#btnGetLatLng').addEventListener('click', () => formSubmit());
+	// iOS soft keyboards often send an empty "code" for Enter/Go, so check key and keyCode too
+	document.querySelector(TXT_ADDRESS_SELECTOR).addEventListener('keydown', (key) => {
+		if (key.key === 'Enter' || key.code === 'Enter' || key.keyCode === 13) {
+			key.preventDefault();
+			formSubmit();
+		}
+	});
+	document.querySelector('#btnGetLatLng').addEventListener('click', (e) => { e.preventDefault(); formSubmit(); });
 
 	document.addEventListener('keydown', documentKeydown);
 	document.addEventListener('touchmove', (e) => { if (document.fullscreenElement) e.preventDefault(); });
@@ -80,13 +87,44 @@ const init = () => {
 		minChars: 3,
 		showNoSuggestionNotice: true,
 		noSuggestionNotice: 'No results found. Please try a different search string.',
-		onSelect(suggestion) { autocompleteOnSelect(suggestion, this); },
-		width: 490,
+		onSelect(suggestion) { autocompleteOnSelect(suggestion); },
+		width: 'auto',
+		triggerSelectOnValidInput: false,
 	});
 
+	// iOS Safari: the input's blur (keyboard closing) can swallow the "click" on a suggestion,
+	// so select on pointerdown/touchend as well. preventDefault keeps focus so the list stays put.
+	const ac = $(TXT_ADDRESS_SELECTOR).devbridgeAutocomplete();
+	const pickSuggestion = (event) => {
+		const item = event.target.closest?.('.autocomplete-suggestion');
+		if (!item) return;
+		const index = parseInt(item.dataset.index, 10);
+		if (Number.isNaN(index) || !ac.suggestions[index]) return;
+		event.preventDefault();
+		ac.select(index);
+	};
+	ac.suggestionsContainer.addEventListener('pointerdown', pickSuggestion);
+	ac.suggestionsContainer.addEventListener('touchend', pickSuggestion, { passive: false });
+
+	// GO / Enter: geocode whatever is in the box (no need to have picked a suggestion)
 	const formSubmit = () => {
-		const ac = $(TXT_ADDRESS_SELECTOR).devbridgeAutocomplete();
-		if (ac.suggestions[0]) $(ac.suggestionsContainer.children[0]).trigger('click');
+		const text = document.querySelector(TXT_ADDRESS_SELECTOR).value.trim();
+		// close the suggestion list and ignore late suggestion replies for a moment,
+		// so the list can't pop up over the buttons after GO
+		try {
+			ac.hide();
+			ac.disable();
+			setTimeout(() => ac.enable(), 1500);
+		} catch (e) { /* ignore */ }
+		document.querySelector(TXT_ADDRESS_SELECTOR).blur();
+		if (!text) return false;
+		// if the text exactly matches a loaded suggestion, use it (exact Esri match)
+		const exact = (ac.suggestions ?? []).find((sug) => sug.value.toLowerCase() === text.toLowerCase());
+		if (exact) {
+			autocompleteOnSelect(exact);
+		} else {
+			geocodeText(text);
+		}
 		return false;
 	};
 
@@ -147,6 +185,7 @@ const init = () => {
 		// display is set as style.display = 'none' in navigation.mjs
 		// so we have to set it to '' to show it again;
 		loadingId.style.display = '';
+		showSearchMessage('Enter your location above to continue');
 
 		// document.querySelector('#spanStationId').innerHTML = '';
 		// document.querySelector('#spanRadarId').innerHTML = '';
@@ -163,27 +202,96 @@ const init = () => {
 	document.querySelector('#container').addEventListener('swiped-right', () => swipeCallBack('right'));
 };
 
-const autocompleteOnSelect = async (suggestion, elem) => {
-	// Do not auto get the same city twice.
-	if (elem.previousSuggestionValue === suggestion.value) return;
+// show a short message on the loading screen (eg place not found)
+const showSearchMessage = (text) => {
+	const instructions = document.querySelector('#loading .instructions');
+	if (instructions) instructions.textContent = text;
+};
 
+const useLocation = (geometry) => {
+	localStorage.removeItem('latLonFromGPS');
+	document.querySelector(BNT_GET_GPS_SELECTOR).classList.remove('active');
+	doRedirectToGeometry(geometry);
+};
+
+// Esri "find" for a suggestion (magicKey) or free text, Australia only
+const esriFind = async (text, magicKey) => {
 	const data = await json('https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/find', {
 		data: {
-			text: suggestion.value,
-			magicKey: suggestion.data,
+			text,
+			...(magicKey ? { magicKey } : {}),
 			countryCode: 'AUS',
+			maxLocations: 1,
 			f: 'json',
 		},
+		retryCount: 1,
+		timeout: 12_000,
 	});
+	const loc = data?.locations?.[0];
+	if (!loc?.feature?.geometry) return null;
+	return loc.feature.geometry;
+};
 
-	const loc = data.locations[0];
-	if (loc) {
-		localStorage.removeItem('latLonFromGPS');
-		document.querySelector(BNT_GET_GPS_SELECTOR).classList.remove('active');
-		doRedirectToGeometry(loc.feature.geometry);
-	} else {
-		console.error('An unexpected error occurred. Please try a different search string.');
+// Open-Meteo geocoder (Australia), searching on the place name before the first comma
+const openMeteoFind = async (text) => {
+	const name = text.split(',')[0].trim();
+	if (!name) return null;
+	const result = await getGeocoding(name);
+	const places = result?.results ?? [];
+	if (places.length === 0) return null;
+	// prefer a match in the state named in the text, if any
+	const lower = text.toLowerCase();
+	const best = places.find((pl) => pl.admin1 && lower.includes(pl.admin1.toLowerCase())) ?? places[0];
+	return { x: best.longitude, y: best.latitude };
+};
+
+// bundled town list (works offline)
+const townFind = (text) => {
+	const name = text.split(',')[0].trim().toLowerCase();
+	const town = (window.AuTowns ?? []).find((t) => t[0].toLowerCase() === name);
+	return town ? { x: town[2], y: town[1] } : null;
+};
+
+const findPlace = async (text, magicKey) => {
+	const attempts = [
+		() => esriFind(text, magicKey),
+		() => (magicKey ? esriFind(text) : null),
+		() => openMeteoFind(text),
+		() => townFind(text),
+	];
+	// eslint-disable-next-line no-restricted-syntax
+	for (const attempt of attempts) {
+		try {
+			// eslint-disable-next-line no-await-in-loop
+			const geometry = await attempt();
+			if (geometry && Number.isFinite(Number(geometry.x)) && Number.isFinite(Number(geometry.y))) return geometry;
+		} catch (error) {
+			console.warn(`Place search step failed: ${error?.message ?? error}`);
+		}
 	}
+	return null;
+};
+
+let lastSelect = { value: '', at: 0 };
+
+const geocodeText = async (text, magicKey) => {
+	showSearchMessage(`Finding ${text}...`);
+	const geometry = await findPlace(text, magicKey);
+	if (geometry) {
+		useLocation(geometry);
+	} else {
+		showSearchMessage(`Couldn't find "${text}". Try a town name or postcode.`);
+		document.querySelector('#loading').style.display = '';
+	}
+};
+
+const autocompleteOnSelect = async (suggestion) => {
+	// pointerdown, touchend and click can all fire for one tap: only act once
+	const now = Date.now();
+	if (lastSelect.value === suggestion.value && now - lastSelect.at < 2000) return;
+	lastSelect = { value: suggestion.value, at: now };
+	document.querySelector(TXT_ADDRESS_SELECTOR).value = suggestion.value;
+	await geocodeText(suggestion.value, suggestion.data);
 };
 
 const doRedirectToGeometry = (geom, haveDataCallback) => {
