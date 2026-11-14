@@ -1,5 +1,6 @@
 import { json } from './modules/utils/fetch.mjs';
 import { getGeocoding } from './modules/utils/weather.mjs';
+import { countryHint, tidySuggestion } from './modules/utils/places.mjs';
 import noSleep from './modules/utils/nosleep.mjs';
 import { round2 } from './modules/utils/units.mjs';
 import { parseQueryString } from './modules/share.mjs';
@@ -74,13 +75,12 @@ const init = () => {
 		params: {
 			f: 'json',
 			category,
-			countryCode: 'AUS',
 			maxSuggestions: 10,
 		},
 		dataType: 'json',
 		transformResult: (response) => ({
 			suggestions: response.suggestions.map((i) => ({
-				value: i.text.replace(/, AUS$/, ''),
+				value: tidySuggestion(i.text),
 				data: i.magicKey,
 			})),
 		}),
@@ -209,18 +209,20 @@ const showSearchMessage = (text) => {
 };
 
 const useLocation = (geometry) => {
+	// time zone from the place search (used by the backup forecast outside Australia)
+	window.placeTimeZoneHint = geometry.timezone ?? null;
 	localStorage.removeItem('latLonFromGPS');
 	document.querySelector(BNT_GET_GPS_SELECTOR).classList.remove('active');
 	doRedirectToGeometry(geometry);
 };
 
-// Esri "find" for a suggestion (magicKey) or free text, Australia only. Capped at 4 seconds.
-const esriFind = async (text, magicKey) => {
+// Esri "find" for a suggestion (magicKey) or free text, worldwide (or one country). Capped at 4 seconds.
+const esriFind = async (text, magicKey, iso2) => {
 	const data = await json('https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/find', {
 		data: {
 			text,
 			...(magicKey ? { magicKey } : {}),
-			countryCode: 'AUS',
+			...(iso2 && iso2 !== 'XX' ? { sourceCountry: iso2 } : {}),
 			maxLocations: 1,
 			f: 'json',
 		},
@@ -232,17 +234,20 @@ const esriFind = async (text, magicKey) => {
 	return loc.feature.geometry;
 };
 
-// Open-Meteo geocoder (Australia), searching on the place name before the first comma. Capped at 4 seconds.
-const openMeteoFind = async (text) => {
+// Open-Meteo geocoder, searching on the place name before the first comma. Capped at 4 seconds.
+// iso2: limit to one country. Otherwise the biggest match wins.
+const openMeteoFind = async (text, iso2) => {
 	const name = text.split(',')[0].trim();
 	if (!name) return null;
-	const result = await getGeocoding(name, { timeout: 4000 });
-	const places = result?.results ?? [];
+	const result = await getGeocoding(name, { timeout: 4000 }, iso2 && iso2 !== 'XX' ? iso2 : null);
+	let places = result?.results ?? [];
 	if (places.length === 0) return null;
-	// prefer a match in the state named in the text, if any
 	const lower = text.toLowerCase();
-	const best = places.find((pl) => pl.admin1 && lower.includes(pl.admin1.toLowerCase())) ?? places[0];
-	return { x: best.longitude, y: best.latitude };
+	// prefer a match in the region/state named in the text
+	const inRegion = places.filter((pl) => pl.admin1 && lower.includes(pl.admin1.toLowerCase()));
+	if (inRegion.length > 0) places = inRegion;
+	const best = [...places].sort((a, b) => (b.population ?? 0) - (a.population ?? 0))[0];
+	return { x: best.longitude, y: best.latitude, timezone: best.timezone };
 };
 
 const STATE_NAMES = {
@@ -256,17 +261,22 @@ const STATE_NAMES = {
 	ACT: ['australian capital territory', 'act'],
 };
 
-// bundled town list (instant, works offline). Matches "Town" or "Town, ..., State".
+// bundled Australian town list (instant, works offline). Matches "Town" or "Town, ..., State".
 const townFind = (text) => {
 	const parts = text.split(',').map((p) => p.trim().toLowerCase()).filter(Boolean);
 	if (parts.length === 0) return null;
 	const name = parts[0];
 	const matches = (window.AuTowns ?? []).filter((t) => t[0].toLowerCase() === name);
 	if (matches.length === 0) return null;
-	const rest = parts.slice(1);
-	const inState = matches.find((t) => rest.some((p) => (STATE_NAMES[t[3]] ?? []).includes(p)));
-	// several towns share a name in different states: only guess when it's unambiguous
-	const town = inState ?? (matches.length === 1 ? matches[0] : null);
+	const rest = parts.slice(1).filter((p) => p !== 'australia' && p !== 'aus');
+	let town;
+	if (rest.length > 0) {
+		// "Town, ..., State": the state must match
+		town = matches.find((t) => rest.some((p) => (STATE_NAMES[t[3]] ?? []).includes(p)));
+	} else {
+		// just "Town": the biggest Australian town of that name (eg Perth -> Perth WA)
+		[town] = [...matches].sort((a, b) => b[4] - a[4]);
+	}
 	return town ? { x: town[2], y: town[1] } : null;
 };
 
@@ -292,41 +302,51 @@ const writePlaceCache = (text, geometry) => {
 };
 
 const validGeometry = (g) => g && Number.isFinite(Number(g.x)) && Number.isFinite(Number(g.y))
-	&& Number(g.y) < -9 && Number(g.y) > -45 && Number(g.x) > 112 && Number(g.x) < 155;
+	&& Math.abs(Number(g.y)) <= 90 && Math.abs(Number(g.x)) <= 180;
 
-// first good Australian answer from several lookups run at the same time
-const firstGood = (promises) => new Promise((resolve) => {
-	let pending = promises.length;
-	if (pending === 0) resolve(null);
-	promises.forEach((promise) => {
-		Promise.resolve(promise).then((g) => {
-			if (validGeometry(g)) resolve(g);
-		}).catch((error) => {
-			console.warn(`Place search step failed: ${error?.message ?? error}`);
-		}).finally(() => {
-			pending -= 1;
-			if (pending === 0) resolve(null);
-		});
+// Esri ranks places by importance, so prefer its answer; Open-Meteo is the backup.
+// Both run at the same time; whichever is usable first (Esri preferred) wins, all within 5 seconds.
+const bestOf = (esriPromise, openMeteoPromise) => new Promise((resolve) => {
+	let esriDone = false;
+	let omResult = null;
+	let omDone = false;
+	const finish = (g) => resolve(validGeometry(g) ? g : null);
+	esriPromise.then((g) => {
+		esriDone = true;
+		if (validGeometry(g)) finish(g);
+		else if (omDone) finish(omResult);
+	}).catch((error) => {
+		esriDone = true;
+		console.warn(`Esri place search failed: ${error?.message ?? error}`);
+		if (omDone) finish(omResult);
 	});
+	openMeteoPromise.then((g) => { omResult = g; }).catch((error) => {
+		console.warn(`Open-Meteo place search failed: ${error?.message ?? error}`);
+	}).finally(() => {
+		omDone = true;
+		if (esriDone) finish(omResult);
+	});
+	// Esri slow or blocked: take Open-Meteo's answer after 2.5 s
+	setTimeout(() => { if (omDone && validGeometry(omResult)) finish(omResult); }, 2500);
 	// hard stop, in case a blocked request never settles
-	setTimeout(() => resolve(null), 5000);
+	setTimeout(() => finish(omResult), 5000);
 });
 
 const findPlace = async (text, magicKey) => {
 	// 1. saved on this device
 	const cached = readPlaceCache(text);
 	if (cached) return cached;
-	// 2. built-in town list
-	const town = townFind(text);
-	if (validGeometry(town)) {
-		writePlaceCache(text, town);
-		return town;
+	const hint = countryHint(text);
+	// 2. built-in Australian town list (unless another country is named)
+	if (hint === null || hint === 'AU') {
+		const town = townFind(text);
+		if (validGeometry(town)) {
+			writePlaceCache(text, town);
+			return town;
+		}
 	}
-	// 3. remote geocoders in parallel, first good result wins
-	const geometry = await firstGood([
-		esriFind(text, magicKey),
-		openMeteoFind(text),
-	]);
+	// 3. remote geocoders in parallel (worldwide, or limited to the named country)
+	const geometry = await bestOf(esriFind(text, magicKey, hint), openMeteoFind(text, hint));
 	if (geometry) writePlaceCache(text, geometry);
 	return geometry;
 };

@@ -32,6 +32,17 @@ const STATE_ABBR = {
 
 const abbreviateState = (state) => STATE_ABBR[state] ?? state;
 
+// is a point in Australia? (inside the rough bounding box and within 150 km of a bundled town)
+const isInAustralia = (lat, lon) => {
+	const la = Number(lat);
+	const lo = Number(lon);
+	if (!(la < -9 && la > -45 && lo > 112 && lo < 155)) return false;
+	// Papua New Guinea's south coast is inside the box: keep it out
+	if (la > -10.7 && lo > 141) return false;
+	const town = closestTown(la, lo);
+	return !!town && town.distance < 150;
+};
+
 // geohash encoder (used by the BOM location API)
 const GEOHASH_BASE32 = '0123456789bcdefghjkmnpqrstuvwxyz';
 const geohash = (lat, lon, precision = 6) => {
@@ -102,6 +113,7 @@ const closestTown = (lat, lon) => {
 };
 
 export {
+	isInAustralia,
 	DEFAULT_LOCATION,
 	TRAVEL_CITIES,
 	abbreviateState,

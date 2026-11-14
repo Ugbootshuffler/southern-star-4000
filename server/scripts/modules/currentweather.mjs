@@ -1,5 +1,6 @@
 // current weather conditions display
 import STATUS from './status.mjs';
+import { locationDateTime, locationNow } from './utils/loctime.mjs';
 import { loadImg } from './utils/image.mjs';
 import { directionToNSEW } from './utils/calc.mjs';
 import { getWeatherIconFromIconLink } from './icons.mjs';
@@ -107,8 +108,8 @@ const shortConditions = (_condition) => {
 };
 
 const getCurrentWeatherByHourFromTime = (data) => {
-	const currentTime = new Date();
-	const onlyDate = currentTime.toLocaleDateString('en-CA', { timeZone: data.timeZone }).split('T')[0]; // Extracts "YYYY-MM-DD"
+	const currentTime = locationNow();
+	const onlyDate = locationDateTime().toFormat('yyyy-MM-dd');
 
 	const availableTimes = data.forecast[onlyDate].hours;
 

@@ -1,6 +1,7 @@
 // hourly forecast list
 
 import STATUS from './status.mjs';
+import { locationDateTime } from './utils/loctime.mjs';
 import getHourlyData from './hourly.mjs';
 import WeatherDisplay from './weatherdisplay.mjs';
 import { registerDisplay } from './navigation.mjs';
@@ -65,7 +66,7 @@ class HourlyGraph extends WeatherDisplay {
 
 		// calculate time scale
 		const timeScale = calcScale(0, 5, this.data.temperature.length - 1, availableWidth);
-		const startTime = DateTime.now().startOf('hour');
+		const startTime = locationDateTime().startOf('hour');
 		if (ConversionHelpers.getHoursFormat() === '12-hour') {
 			document.querySelector('.x-axis .l-1').innerHTML = formatTime(startTime);
 			document.querySelector('.x-axis .l-2').innerHTML = formatTime(startTime.plus({ hour: 6 }));

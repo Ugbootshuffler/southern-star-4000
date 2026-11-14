@@ -1,6 +1,7 @@
 // Marine Forecast Display
 
 import STATUS from './status.mjs';
+import { locationDateTime, locationNow } from './utils/loctime.mjs';
 import { loadImg } from './utils/image.mjs';
 import WeatherDisplay from './weatherdisplay.mjs';
 import { registerDisplay } from './navigation.mjs';
@@ -34,8 +35,7 @@ class MarineForecast extends WeatherDisplay {
 		// aggregate wind speed data from conventional hourl weather data
 		const aggregatedForecastData = aggregateWeatherForecastData(_weatherParameters);
 
-		const currentTime = new Date();
-		const onlyToday = currentTime.toLocaleDateString('en-CA', { timeZone: _weatherParameters.timezone }).split('T')[0]; // Extracts "YYYY-MM-DD"
+		const onlyToday = locationDateTime().toFormat('yyyy-MM-dd');
 
 		// today wind speed
 		const todayWindSpeedValues = aggregatedForecastData[onlyToday].hours.slice(0, 11).map((hour) => hour.wind_speed_10m);
@@ -114,7 +114,7 @@ class MarineForecast extends WeatherDisplay {
 		}
 		const waveConditionText = this.marineData.map((period) => calculateSeasCondition(period).toUpperCase());
 
-		const time = new Date();
+		const time = locationNow();
 		const isAfterFivePM = time.getHours() >= 17;
 		const advisoryText = isAfterFivePM ? getMarineAdvisory(this.marineData[1], this.data.windSpeed) : getMarineAdvisory(this.marineData[0], this.data.windSpeed);
 

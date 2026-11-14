@@ -1,5 +1,6 @@
 // display sun and moon data
 import { loadImg, preloadImg } from './utils/image.mjs';
+import { locationDateTime, locationTimeZone } from './utils/loctime.mjs';
 import { DateTime } from '../vendor/auto/luxon.mjs';
 import STATUS from './status.mjs';
 import WeatherDisplay from './weatherdisplay.mjs';
@@ -44,14 +45,14 @@ class Almanac extends WeatherDisplay {
 
 	calcSunMoonData(weatherParameters) {
 		const sun = [
-			SunCalc.getTimes(new Date(), weatherParameters.latitude, weatherParameters.longitude),
-			SunCalc.getTimes(DateTime.local().plus({ days: 1 }).toJSDate(), weatherParameters.latitude, weatherParameters.longitude),
+			SunCalc.getTimes(locationDateTime().set({ hour: 12 }).toJSDate(), weatherParameters.latitude, weatherParameters.longitude),
+			SunCalc.getTimes(locationDateTime().set({ hour: 12 }).plus({ days: 1 }).toJSDate(), weatherParameters.latitude, weatherParameters.longitude),
 		];
 
 		// brute force the moon phases by scanning the next 30 days
 		const moon = [];
 		// start with yesterday
-		let moonDate = DateTime.local().minus({ days: 1 });
+		let moonDate = locationDateTime().minus({ days: 1 });
 		let { phase } = SunCalc.getMoonIllumination(moonDate.toJSDate());
 		let iterations = 0;
 		do {
@@ -117,16 +118,16 @@ class Almanac extends WeatherDisplay {
 	async drawCanvas() {
 		super.drawCanvas();
 		const info = this.data;
-		const Today = DateTime.local();
+		const Today = locationDateTime();
 		const Tomorrow = Today.plus({ days: 1 });
 
 		// sun and moon data
 		this.elem.querySelector('.day-1').innerHTML = Today.toLocaleString({ weekday: 'long' });
 		this.elem.querySelector('.day-2').innerHTML = Tomorrow.toLocaleString({ weekday: 'long' });
-		this.elem.querySelector('.rise-1').innerHTML = DateTime.fromJSDate(info.sun[0].sunrise).toLocaleString(DateTime.TIME_SIMPLE).toLowerCase();
-		this.elem.querySelector('.rise-2').innerHTML = DateTime.fromJSDate(info.sun[1].sunrise).toLocaleString(DateTime.TIME_SIMPLE).toLowerCase();
-		this.elem.querySelector('.set-1').innerHTML = DateTime.fromJSDate(info.sun[0].sunset).toLocaleString(DateTime.TIME_SIMPLE).toLowerCase();
-		this.elem.querySelector('.set-2').innerHTML = DateTime.fromJSDate(info.sun[1].sunset).toLocaleString(DateTime.TIME_SIMPLE).toLowerCase();
+		this.elem.querySelector('.rise-1').innerHTML = DateTime.fromJSDate(info.sun[0].sunrise).setZone(locationTimeZone()).toLocaleString(DateTime.TIME_SIMPLE).toLowerCase();
+		this.elem.querySelector('.rise-2').innerHTML = DateTime.fromJSDate(info.sun[1].sunrise).setZone(locationTimeZone()).toLocaleString(DateTime.TIME_SIMPLE).toLowerCase();
+		this.elem.querySelector('.set-1').innerHTML = DateTime.fromJSDate(info.sun[0].sunset).setZone(locationTimeZone()).toLocaleString(DateTime.TIME_SIMPLE).toLowerCase();
+		this.elem.querySelector('.set-2').innerHTML = DateTime.fromJSDate(info.sun[1].sunset).setZone(locationTimeZone()).toLocaleString(DateTime.TIME_SIMPLE).toLowerCase();
 
 		const days = info.moon.map((MoonPhase) => {
 			const fill = {};

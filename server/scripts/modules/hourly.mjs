@@ -1,6 +1,7 @@
 // hourly forecast list
 
 import STATUS from './status.mjs';
+import { locationDateTime, locationNow } from './utils/loctime.mjs';
 import { DateTime } from '../vendor/auto/luxon.mjs';
 import { getWeatherRegionalIconFromIconLink } from './icons.mjs';
 import { directionToNSEW } from './utils/calc.mjs';
@@ -49,7 +50,7 @@ class Hourly extends WeatherDisplay {
 		const list = this.elem.querySelector('.hourly-lines');
 		list.innerHTML = '';
 
-		const startingHour = DateTime.local();
+		const startingHour = locationDateTime();
 
 		const lines = this.data.map((data, index) => {
 			const fillValues = {};
@@ -126,8 +127,8 @@ class Hourly extends WeatherDisplay {
 }
 
 const getCurrentWeatherByHourFromTime = (data) => {
-	const currentTime = new Date();
-	const onlyDate = currentTime.toLocaleDateString('en-CA', { timeZone: data.timeZone }).split('T')[0] ?? currentTime.toLocaleDateString('en-CA', { timeZone: data.timeZone }); // Extracts "YYYY-MM-DD"
+	const currentTime = locationNow();
+	const onlyDate = locationDateTime().toFormat('yyyy-MM-dd');
 
 	const availableTimes = data.forecast[onlyDate].hours;
 	const nextDate = DateTime.fromISO(onlyDate).plus({ days: 1 }).toISODate();

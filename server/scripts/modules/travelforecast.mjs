@@ -34,9 +34,14 @@ class TravelForecast extends WeatherDisplay {
 		this.timing.delay.push(150);
 	}
 
-	async getData() {
+	async getData(weatherParameters) {
 		// super checks for enabled
-		if (!super.getData()) return;
+		if (!super.getData(weatherParameters)) return;
+		// Australian capitals: skipped for places outside Australia
+		if ((weatherParameters ?? this.weatherParameters)?.inAustralia === false) {
+			this.setStatus(STATUS.noData);
+			return;
+		}
 		let forecasts;
 		try {
 			const points = await getMultiPoint(TravelCities);
@@ -155,7 +160,7 @@ class TravelForecast extends WeatherDisplay {
 const getTravelCitiesDayName = (cities) => cities.reduce((dayName, city) => {
 	if (city && dayName === '') {
 		// today or tomorrow
-		const day = DateTime.local().plus({ days: (city.today) ? 0 : 1 });
+		const day = DateTime.now().setZone('Australia/Sydney').plus({ days: (city.today) ? 0 : 1 });
 		// return the day
 		return day.setLocale('en-AU').toLocaleString({ weekday: 'long' });
 	}

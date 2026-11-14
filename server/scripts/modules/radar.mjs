@@ -2,6 +2,7 @@
 /* eslint-disable no-plusplus */
 /* eslint-disable no-underscore-dangle */
 import STATUS from './status.mjs';
+import { locationNow } from './utils/loctime.mjs';
 import WeatherDisplay from './weatherdisplay.mjs';
 import { registerDisplay } from './navigation.mjs';
 import { DateTime } from '../vendor/auto/luxon.mjs';
@@ -63,7 +64,7 @@ class Radar extends WeatherDisplay {
 	static getWeatherForCityFromNearestHour(cityOpenMeteoData) {
 		if (!cityOpenMeteoData || !cityOpenMeteoData.time) return null;
 
-		const now = new Date();
+		const now = locationNow();
 		const currentHour = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours());
 
 		let nearestIndex = 0;

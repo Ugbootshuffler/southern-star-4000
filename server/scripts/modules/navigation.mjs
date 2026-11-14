@@ -9,7 +9,7 @@ import {
 import settings from './settings.mjs';
 import { getBomData, isBomEnabled, showBomNotice } from './utils/bom.mjs';
 import {
-	abbreviateState, closestTown, nearbyTowns,
+	abbreviateState, closestTown, nearbyTowns, isInAustralia,
 } from './utils/au-config.mjs';
 
 import { parseQueryString } from './share.mjs';
@@ -74,14 +74,15 @@ const message = (data) => {
 };
 
 // work out a display name for the location from the search text, or the nearest town
-const locationName = (latLon) => {
+const locationName = (latLon, inAustralia = true) => {
 	const query = localStorage.getItem('latLonQuery') ?? parseQueryString()?.latLonQuery ?? '';
 	const parts = query.split(',').map((p) => p.trim()).filter((p) => p && p !== 'AUS' && p !== 'Australia');
 	// "Shell Cove, Wollongong, New South Wales, AUS" => city "Shell Cove", state "NSW"
 	// "2529, Oak Flats, Wollongong, New South Wales, AUS" => city "Oak Flats"
 	// postcode searches: name the place after the nearest town
-	if (parts.length > 0 && /^\d{4}$/.test(parts[0])) parts.length = 0;
+	if (inAustralia && parts.length > 0 && /^\d{4}$/.test(parts[0])) parts.length = 0;
 	if (parts.length === 0 || /^-?\d+(\.\d+)?$/.test(parts[0])) {
+		if (!inAustralia) return { city: `${Number(latLon.lat).toFixed(2)}, ${Number(latLon.lon).toFixed(2)}`, state: '' };
 		const town = closestTown(latLon.lat, latLon.lon);
 		return { city: town?.name ?? 'Unknown', state: town?.state ?? '' };
 	}
@@ -124,7 +125,8 @@ const getWeather = async (latLon, haveDataCallback) => {
 	const [point, bom] = await Promise.all([
 		getPoint(latLon.lat, latLon.lon),
 		softly('BOM data', () => Promise.race([
-			getBomData(latLon.lat, latLon.lon),
+			// BOM only covers Australia
+			isInAustralia(latLon.lat, latLon.lon) ? getBomData(latLon.lat, latLon.lon) : null,
 			// BOM must never hold up the forecast: give up after 10 seconds
 			new Promise((resolve) => { setTimeout(() => resolve(null), 10_000); }),
 		])),
@@ -148,7 +150,9 @@ const getWeather = async (latLon, haveDataCallback) => {
 	try {
 		const notice = document.querySelector('#bomNotice');
 		const firstNote = notice?.textContent?.startsWith('BOM data is for personal use');
-		if (isBomEnabled()) {
+		if (isBomEnabled() && !isInAustralia(latLon.lat, latLon.lon)) {
+			showBomNotice('BOM covers Australia only, using Open-Meteo here');
+		} else if (isBomEnabled()) {
 			if (!bom) showBomNotice('BOM unavailable, using Open-Meteo');
 			else if (!bom.observations) showBomNotice('BOM observations unavailable, using Open-Meteo for current conditions');
 			else if (!firstNote) showBomNotice('');
@@ -168,21 +172,25 @@ const getWeather = async (latLon, haveDataCallback) => {
 
 	if (typeof haveDataCallback === 'function') softly('callback', () => haveDataCallback(point));
 
-	const { city, state } = locationName(latLon);
+	const inAustralia = isInAustralia(latLon.lat, latLon.lon);
+	const { city, state } = locationName(latLon, inAustralia);
+	// times on every screen are shown in the location's own time zone
+	window.locationTimeZone = point.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 	// populate the weather parameters
 	weatherParameters.latitude = latLon.lat;
 	weatherParameters.longitude = latLon.lon;
 	weatherParameters.city = city;
 	weatherParameters.state = state;
-	weatherParameters.country = 'Australia';
-	weatherParameters.timeZone = point.timezone ?? 'Australia/Sydney';
+	weatherParameters.country = inAustralia ? 'Australia' : '';
+	weatherParameters.inAustralia = inAustralia;
+	weatherParameters.timeZone = window.locationTimeZone;
 	weatherParameters.point = point;
 	weatherParameters.current = point.current;
 	weatherParameters.forecast = aggregatedForecastData;
 	weatherParameters.bom = bom;
 	weatherParameters.stationId = bom?.observations?.station?.name ?? 'Open-Meteo model';
-	weatherParameters.nearbyCities = nearbyTowns(latLon.lat, latLon.lon, { count: 4, minSpacingKm: 15, minPopulation: 3000 })
+	weatherParameters.nearbyCities = !inAustralia ? [] : nearbyTowns(latLon.lat, latLon.lon, { count: 4, minSpacingKm: 15, minPopulation: 3000 })
 		.map((t) => ({
 			city: t.name, lat: String(t.lat), lon: String(t.lon), population: String(t.population),
 		}));

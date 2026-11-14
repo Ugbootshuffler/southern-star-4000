@@ -138,10 +138,11 @@ const getMarinePoint = async (lat, lon) => {
 	return null;
 };
 
-const getGeocoding = async (name, params = {}) => {
+const getGeocoding = async (name, params = {}, countryCode = null) => {
 	try {
 		const numResults = 20;
-		return await json(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=${numResults}&language=en&format=json&countryCode=AU`, params);
+		const country = countryCode ? `&countryCode=${countryCode}` : '';
+		return await json(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=${numResults}&language=en&format=json${country}`, params);
 	} catch (error) {
 		console.log(`Unable to get locality with value ${name}`);
 		console.error(error);

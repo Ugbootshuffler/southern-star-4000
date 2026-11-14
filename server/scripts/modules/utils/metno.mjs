@@ -3,7 +3,7 @@
 // as an Open-Meteo forecast so every display works unchanged.
 import { json } from './fetch.mjs';
 import { DateTime } from '../../vendor/auto/luxon.mjs';
-import { closestTown } from './au-config.mjs';
+import { closestTown, isInAustralia } from './au-config.mjs';
 
 const STATE_TZ = {
 	NSW: 'Australia/Sydney',
@@ -19,12 +19,17 @@ const STATE_TZ = {
 // time zone for an Australian location (from the nearest bundled town, else the device's zone)
 const auTimeZone = (lat, lon) => {
 	const town = closestTown(lat, lon);
-	if (town && town.distance < 400 && STATE_TZ[town.state]) {
+	if (town && isInAustralia(lat, lon) && STATE_TZ[town.state]) {
 		// Broken Hill area uses Adelaide time
 		if (town.state === 'NSW' && lon < 142) return 'Australia/Broken_Hill';
 		return STATE_TZ[town.state];
 	}
-	return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Australia/Sydney';
+	// outside Australia: the zone the place search found, else a fixed offset from the longitude
+	if (window.placeTimeZoneHint) return window.placeTimeZoneHint;
+	const offset = Math.round(Number(lon) / 15);
+	if (offset === 0) return 'Etc/GMT';
+	// Etc/GMT zones use inverted signs (Etc/GMT-10 is UTC+10)
+	return `Etc/GMT${offset > 0 ? '-' : '+'}${Math.abs(offset)}`;
 };
 
 // MET Norway symbol codes to WMO weather codes (as used by Open-Meteo)
