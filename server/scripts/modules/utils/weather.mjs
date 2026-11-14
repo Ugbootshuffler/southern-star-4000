@@ -17,11 +17,9 @@ const getMarineDataModels = () => {
 	const models = [
 		'meteofrance_currents',
 		'meteofrance_wave',
-		'ewam',
 		'gwam',
 		'ecmwf_wam025',
 		'ncep_gfswave025',
-		'ncep_gfswave016',
 		'era5_ocean',
 	];
 
