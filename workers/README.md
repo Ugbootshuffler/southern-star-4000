@@ -1,16 +1,19 @@
 # World Wire feed proxy
 
-GitHub Pages cannot read most of the news RSS feeds in the browser (CORS). This worker fetches BBC, Guardian, Al Jazeera, NPR and Fox and returns JSON at `/api/wire`.
+GitHub Pages cannot read most of the news RSS feeds in the browser (CORS). This worker fetches BBC, Guardian, Al Jazeera, NPR and Fox and returns JSON at `/api/wire`. The 8kun / "Notables" feed from Monitor Light is not included.
 
-## Local (this prototype)
+## Live
 
-`npm start` serves the same JSON at `http://localhost:8080/api/wire` through Express. No Cloudflare account is required.
+The worker is deployed as `southern-star-wire`:
 
-## Later deploy (not done here)
+https://southern-star-wire.ugbootshuffler.workers.dev/api/wire
 
-1. A Cloudflare account and `npx wrangler login`
-2. `npx wrangler deploy` from this repo (uses `wrangler.toml`)
-3. Point the static site at the worker, either by setting `window.WORLD_WIRE_URL` or adding `?wireApi=https://<worker>.workers.dev/api/wire`
-4. Push the `world-wire` branch and rebuild GitHub Pages when you are ready — do not deploy until Andrew says so
+The GitHub Pages site uses that URL by default (`server/scripts/modules/utils/worldwire-api.mjs`). You can still override it with `?wireApi=` or `window.WORLD_WIRE_URL`.
 
-The 8kun / "Notables" feed from Monitor Light is not included.
+## Local
+
+`npm start` still serves the same JSON at `http://localhost:8080/api/wire` through Express, which is useful when developing the aggregator. The static site will call the live worker unless you override the URL.
+
+## Redeploy
+
+Upload `workers/world-wire.mjs` as a module Worker named `southern-star-wire` (see `wrangler.toml`, compatibility_date `2026-11-18`). CORS allows `https://ugbootshuffler.github.io` (`Access-Control-Allow-Origin: *`).

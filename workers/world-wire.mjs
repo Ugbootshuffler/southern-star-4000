@@ -1,10 +1,10 @@
 // World Wire RSS aggregator.
 // Runs locally via the Express /api/wire route (npm start).
-// Ready to deploy later as a Cloudflare Worker (wrangler.toml); do not deploy from this prototype.
+// Deployed as the Cloudflare Worker southern-star-wire.
 
 const CACHE_MS = 5 * 60 * 1000;
 const FETCH_MS = 8000;
-const USER_AGENT = 'SouthernStar4000/1.1 (world-wire; local prototype)';
+const USER_AGENT = 'SouthernStar4000/1.1 (world-wire; https://ugbootshuffler.github.io/southern-star-4000/)';
 
 // Outlet lean matches Monitor Light. 8kun / "Notables" is intentionally omitted.
 export const DESKS = [

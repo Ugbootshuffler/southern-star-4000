@@ -1,6 +1,6 @@
 // Shared fetch for the World Wire screen and the bottom headline crawl.
 
-const DEFAULT_URL = '/api/wire';
+const DEFAULT_URL = 'https://southern-star-wire.ugbootshuffler.workers.dev/api/wire';
 
 let cache = null;
 let inflight = null;

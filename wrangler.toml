@@ -1,9 +1,5 @@
-# Local-ready Cloudflare Worker for World Wire RSS.
-# Do not deploy from this prototype. Later:
-#   npx wrangler login
-#   npx wrangler deploy
-# Then point the static GitHub Pages site at the worker URL, e.g.
-#   ?wireApi=https://southern-star-world-wire.<account>.workers.dev/api/wire
-name = "southern-star-world-wire"
+# Cloudflare Worker for World Wire RSS.
+# Live: https://southern-star-wire.ugbootshuffler.workers.dev/api/wire
+name = "southern-star-wire"
 main = "workers/world-wire.mjs"
-compatibility_date = "2026-11-19"
+compatibility_date = "2026-11-18"
