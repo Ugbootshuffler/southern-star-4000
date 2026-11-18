@@ -47,6 +47,8 @@
   <script type="module" src="scripts/modules/localforecast.mjs"></script>
   <script type="module" src="scripts/modules/radar.mjs"></script>
   <script type="module" src="scripts/modules/travelforecast.mjs"></script>
+  <script type="module" src="scripts/modules/worldwire.mjs"></script>
+  <script type="module" src="scripts/modules/headlinecrawl.mjs"></script>
   <script type="module" src="scripts/modules/progress.mjs"></script>
   <script type="module" src="scripts/modules/radar.mjs"></script>
   <script type="module" src="scripts/modules/settings.mjs"></script>
@@ -127,6 +129,9 @@
       </div>
       <div id="aqi-forecast-html" class="weather-display">
         <%- include('partials/aqi-forecast.ejs') %>
+      </div>
+      <div id="world-wire-html" class="weather-display">
+        <%- include('partials/world-wire.ejs') %>
       </div>
     </div>
     <div id="divTwcBottom">

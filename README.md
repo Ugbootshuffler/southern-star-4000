@@ -88,3 +88,7 @@ build command `npm run build` and publish directory `docs`.
 * Towns: GeoNames, CC BY 4.0.
 * Music: Kevin MacLeod, CC BY 4.0 (credit on the credits page; do not remove it).
 * Fonts/icons: inherited from WeatherStar 4000+ (TWCClassics community); see `server/fonts/ReadMe.txt`.
+
+## World Wire
+
+A retro "World Wire" screen and bottom headline crawl. Headlines come from BBC, Guardian, Al Jazeera, NPR and Fox through a Cloudflare Worker at `https://southern-star-wire.ugbootshuffler.workers.dev/api/wire`. The 8kun / "Notables" feed is not included. Local `npm start` can still serve `/api/wire` for aggregator development — see `workers/README.md`.

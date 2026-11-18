@@ -117,11 +117,16 @@
 		height: 70px;
 		overflow: hidden;
 		margin-top: 10px;
+		display: flex;
+		flex-direction: column;
+		justify-content: flex-start;
 
 		.fixed {
 			font-family: 'Star4000';
 			font-size: 24pt;
 			margin-left: 55px;
+			height: 36px;
+			flex: 0 0 36px;
 		}
 	}
 }

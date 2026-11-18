@@ -12,6 +12,30 @@ const { version } = JSON.parse(fs.readFileSync('package.json'));
 
 app.set('view engine', 'ejs');
 
+// World Wire RSS proxy (same contract as workers/world-wire.mjs).
+const loadWire = import('./workers/world-wire.mjs');
+app.options('/api/wire', (_req, res) => {
+	res.set('Access-Control-Allow-Origin', '*');
+	res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+	res.set('Access-Control-Allow-Headers', 'Content-Type');
+	res.sendStatus(204);
+});
+app.get('/api/wire', async (req, res) => {
+	try {
+		const { getWirePayload } = await loadWire;
+		const data = await getWirePayload({
+			desk: req.query.desk,
+			fresh: req.query.fresh === '1' || req.query.fresh === 'true',
+		});
+		res.set('Access-Control-Allow-Origin', '*');
+		res.set('Cache-Control', 'public, max-age=60');
+		res.json(data);
+	} catch (error) {
+		console.error('world-wire', error);
+		res.status(502).json({ error: 'wire unavailable' });
+	}
+});
+
 if (process.env?.DIST === '1') {
 	app.use('/', express.static(path.join(__dirname, './docs')));
 } else {
