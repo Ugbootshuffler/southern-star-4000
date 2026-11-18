@@ -5,8 +5,8 @@ import WeatherDisplay from './weatherdisplay.mjs';
 import { registerDisplay } from './navigation.mjs';
 import { fetchWire } from './utils/worldwire-api.mjs';
 
-const WORLD_PER_PAGE = 5;
-const WORLD_PAGES = 2;
+const WORLD_PER_PAGE = 3;
+const WORLD_PAGES = 3;
 
 const shortSource = (source = '') => source
 	.replace('BBC World', 'BBC')
@@ -54,6 +54,70 @@ const shortLean = (lean = '') => {
 
 const leanClass = (lean = '') => lean.toLowerCase();
 
+// Wrap a headline onto at most two lines; ellipsis only at a word boundary
+// if the full title still overflows that box. Width is measured with a
+// like-for-like nowrap probe so Star4000's tall glyphs do not fool scrollHeight.
+const headlineProbe = document.createElement('span');
+headlineProbe.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden;white-space:nowrap;';
+
+const measureHeadlineWidth = (text, ref) => {
+	const cs = window.getComputedStyle(ref);
+	headlineProbe.style.font = cs.font;
+	headlineProbe.style.fontSize = cs.fontSize;
+	headlineProbe.style.fontFamily = cs.fontFamily;
+	headlineProbe.style.fontWeight = cs.fontWeight;
+	headlineProbe.style.letterSpacing = cs.letterSpacing;
+	if (!headlineProbe.parentNode) document.body.appendChild(headlineProbe);
+	headlineProbe.textContent = text;
+	return headlineProbe.offsetWidth;
+};
+
+const wordsFit = (words, maxWidth, ref) => measureHeadlineWidth(words.join(' '), ref) <= maxWidth;
+
+const packLine = (words, maxWidth, ref, reserveEllipsis) => {
+	if (words.length === 0) return { text: '', count: 0 };
+	let count = 0;
+	while (count < words.length) {
+		const trial = words.slice(0, count + 1);
+		const label = reserveEllipsis && count + 1 < words.length
+			? `${trial.join(' ')}...`
+			: trial.join(' ');
+		if (count > 0 && measureHeadlineWidth(label, ref) > maxWidth) break;
+		count += 1;
+	}
+	return { text: words.slice(0, count).join(' '), count };
+};
+
+const fitHeadline = (el, text) => {
+	const title = (text || '').trim();
+	el.textContent = title;
+	if (!title) return;
+
+	const maxWidth = el.clientWidth || el.offsetWidth;
+	if (!maxWidth) return;
+
+	const words = title.split(/\s+/);
+	if (wordsFit(words, maxWidth, el)) return;
+
+	const first = packLine(words, maxWidth, el, false);
+	const rest = words.slice(first.count);
+	if (rest.length === 0) {
+		el.textContent = title;
+		return;
+	}
+	if (wordsFit(rest, maxWidth, el)) {
+		el.textContent = title;
+		return;
+	}
+	const second = packLine(rest, maxWidth, el, true);
+	const used = first.count + second.count;
+	if (used < words.length) {
+		el.textContent = `${first.text} ${second.text}...`;
+		return;
+	}
+	el.textContent = title;
+};
+
 class WorldWire extends WeatherDisplay {
 	constructor(navId, elemId) {
 		super(navId, elemId, 'World Wire', true);
@@ -94,7 +158,7 @@ class WorldWire extends WeatherDisplay {
 			if (slice.length === 0) break;
 			pages.push({
 				top: 'World',
-				bottom: i === 0 ? 'Wire' : 'Wire 2',
+				bottom: i === 0 ? 'Wire' : `Wire ${i + 1}`,
 				headers: {
 					region: '', source: 'Source', lean: 'Lean', headline: 'Headline',
 				},
@@ -121,16 +185,21 @@ class WorldWire extends WeatherDisplay {
 			};
 		}).filter(Boolean);
 
-		if (regionRows.length > 0) {
+		// Two region pages so each headline can wrap to two lines without clipping.
+		const regionPageSize = 2;
+		regionRows.forEach((_, i) => {
+			if (i % regionPageSize !== 0) return;
+			const slice = regionRows.slice(i, i + regionPageSize);
+			const pageNo = Math.floor(i / regionPageSize);
 			pages.push({
 				top: 'World',
-				bottom: 'Regions',
+				bottom: pageNo === 0 ? 'Regions' : 'Regions 2',
 				headers: {
 					region: 'Region', source: 'Source', lean: 'Lean', headline: 'Headline',
 				},
-				rows: regionRows,
+				rows: slice,
 			});
-		}
+		});
 
 		this.pages = pages;
 	}
@@ -164,16 +233,21 @@ class WorldWire extends WeatherDisplay {
 				region: row.region,
 				source: row.source,
 				lean: row.lean,
-				headline: row.headline,
+				headline: '',
 			});
 			const leanElem = node.querySelector('.lean');
 			if (leanElem && row.leanClass) leanElem.classList.add(row.leanClass);
-			return node;
+			return { node, headline: row.headline };
 		});
 
 		const lines = this.elem.querySelector('.wire-lines');
 		lines.innerHTML = '';
-		lines.append(...rows);
+		lines.append(...rows.map((row) => row.node));
+		// Fit after layout so scrollHeight uses the real two-line box.
+		rows.forEach((row) => {
+			const headline = row.node.querySelector('.headline');
+			if (headline) fitHeadline(headline, row.headline);
+		});
 
 		this.finishDraw();
 	}

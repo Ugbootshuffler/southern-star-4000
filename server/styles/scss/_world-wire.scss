@@ -25,13 +25,13 @@
 		.wire-row {
 			@include u.text-shadow();
 			position: relative;
-			height: 58px;
-			padding: 0 2px;
+			height: 98px;
+			padding: 0 2px 2px;
 			box-sizing: border-box;
 
 			.meta {
-				height: 30px;
-				padding-top: 10px;
+				height: 28px;
+				padding-top: 8px;
 				box-sizing: border-box;
 				white-space: nowrap;
 				overflow: visible;
@@ -76,9 +76,12 @@
 				font-size: 24pt;
 				position: static;
 				width: 100%;
-				white-space: nowrap;
+				white-space: normal;
 				overflow: hidden;
-				text-overflow: ellipsis;
+				word-break: normal;
+				overflow-wrap: break-word;
+				line-height: 34px;
+				height: 70px;
 				top: auto;
 			}
 		}
