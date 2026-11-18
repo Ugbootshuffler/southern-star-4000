@@ -1,0 +1,22 @@
+<%- include('header.ejs', {titleDual:{ top: 'World' , bottom: 'Wire' }, hasTime: true, noaaLogo: false}) %>
+	<div class="main has-scroll has-box world-wire">
+		<div class="container">
+			<div class="column-headers">
+				<div class="region"></div>
+				<div class="source">Source</div>
+				<div class="lean">Lean</div>
+				<div class="headline">Headline</div>
+			</div>
+			<div class="wire-lines">
+				<div class="wire-row template">
+					<div class="meta">
+						<div class="region"></div>
+						<div class="source"></div>
+						<div class="lean"></div>
+					</div>
+					<div class="headline"></div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<%- include('scroll.ejs') %>

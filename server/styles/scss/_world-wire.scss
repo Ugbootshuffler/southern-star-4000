@@ -1,0 +1,125 @@
+@use 'shared/_colors'as c;
+@use 'shared/_utils'as u;
+
+.weather-display .world-wire {
+	&.main {
+		overflow-y: hidden;
+
+		.container {
+			position: relative;
+			top: 6px;
+			margin: 0;
+			box-sizing: border-box;
+			height: 294px;
+			overflow: hidden;
+		}
+
+		.column-headers {
+			display: none;
+		}
+
+		.wire-lines {
+			padding-top: 2px;
+		}
+
+		.wire-row {
+			@include u.text-shadow();
+			position: relative;
+			height: 58px;
+			padding: 0 2px;
+			box-sizing: border-box;
+
+			.meta {
+				height: 30px;
+				padding-top: 10px;
+				box-sizing: border-box;
+				white-space: nowrap;
+				overflow: visible;
+			}
+
+			.region,
+			.source,
+			.lean {
+				display: none;
+				font-family: 'Star4000 Small';
+				font-size: 24pt;
+				position: static;
+				width: auto;
+				margin-right: 16px;
+				vertical-align: top;
+			}
+
+			.source,
+			.lean {
+				display: inline-block;
+			}
+
+			.region {
+				color: c.$column-header-text;
+			}
+
+			.source {
+				color: c.$date-time;
+			}
+
+			.lean {
+				text-transform: uppercase;
+				margin-right: 0;
+
+				&.left { color: #80c0ff; }
+				&.independent { color: c.$title-color; }
+				&.right { color: #ffb080; }
+			}
+
+			.headline {
+				font-family: 'Star4000 Small';
+				font-size: 24pt;
+				position: static;
+				width: 100%;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				top: auto;
+			}
+		}
+
+		&.has-region .wire-row .region {
+			display: inline-block;
+		}
+	}
+}
+
+.weather-display .scroll {
+	.headline-crawl {
+		height: 28px;
+		width: 640px;
+		overflow: hidden;
+		position: relative;
+		margin-top: 2px;
+	}
+
+	.headline-crawl-track {
+		display: inline-block;
+		white-space: nowrap;
+		font-family: 'Star4000 Small';
+		font-size: 24pt;
+		color: c.$title-color;
+		@include u.text-shadow(3px, 1.5px);
+		animation: world-wire-crawl 80s linear infinite;
+		will-change: transform;
+	}
+
+	.headline-crawl-run {
+		display: inline-block;
+		padding-left: 0;
+	}
+}
+
+@keyframes world-wire-crawl {
+	from { transform: translateX(0); }
+	to { transform: translateX(-50%); }
+}
+
+#progress-html.weather-display .scroll .headline-crawl {
+	display: none;
+}
